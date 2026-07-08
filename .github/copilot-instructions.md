@@ -1,4 +1,4 @@
-# Copilot instructions for ns-vse-webdev
+# Copilot instructions for nr-vse-webdev
 
 ## What this repo is
 

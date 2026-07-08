@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nr-vse-webdev — Play</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/tetris.css" />
+</head>
+<body class="fade-init">
+  <nav class="navbar">
+    <a class="brand" href="/">nr-vse-webdev</a>
+    <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+    <ul class="nav-links">
+      <li><a href="/index.html">Intro</a></li>
+      <li><a href="/details.html">Details</a></li>
+      <li><a href="/contact.html">Contact</a></li>
+      <li><a href="/play.html">Play</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <h1>Take a break 🎮</h1>
+      <p class="subtitle">
+        A tiny falling-blocks game, built in vanilla JS on an HTML5 canvas.
+      </p>
+    </section>
+
+    <div class="card tetris-card">
+      <div class="tetris-layout">
+        <div class="tetris-board-wrap">
+          <canvas id="tetris-canvas" width="240" height="480"></canvas>
+        </div>
+        <div class="tetris-side">
+          <div class="tetris-stat">
+            <span class="tetris-stat-label">Score</span>
+            <span id="tetris-score" class="tetris-stat-value">0</span>
+          </div>
+          <div class="tetris-stat">
+            <span class="tetris-stat-label">Lines</span>
+            <span id="tetris-lines" class="tetris-stat-value">0</span>
+          </div>
+          <div class="tetris-stat">
+            <span class="tetris-stat-label">Level</span>
+            <span id="tetris-level" class="tetris-stat-value">1</span>
+          </div>
+
+          <div class="tetris-next">
+            <span class="tetris-stat-label">Next</span>
+            <canvas id="tetris-next-canvas" width="96" height="96"></canvas>
+          </div>
+
+          <button id="tetris-restart" class="btn tetris-btn">Restart</button>
+
+          <p id="tetris-message" class="tetris-message"></p>
+
+          <div class="tetris-controls">
+            <h2>Controls</h2>
+            <ul>
+              <li>&larr; / &rarr; — move</li>
+              <li>&uarr; — rotate</li>
+              <li>&darr; — soft drop</li>
+              <li>Space — hard drop</li>
+              <li>P — pause</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
+
+  <script src="/app.js"></script>
+  <script src="/tetris.js"></script>
+</body>
+</html>

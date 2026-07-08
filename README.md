@@ -1,4 +1,4 @@
-# ns-vse-webdev
+# nr-vse-webdev
 
 A jazzy little 3-page static demo site, served by a minimal Express app and
 deployed to Azure App Service via GitHub Actions.
@@ -81,7 +81,7 @@ federated credential for this repo. Either reuse the App Registration from
 Registration — either way, the credential's subject must be:
 
 ```
-repo:glued2/ns-vse-webdev:ref:refs/heads/main
+repo:glued2/nr-vse-webdev:ref:refs/heads/main
 ```
 
 with audience `api://AzureADTokenExchange`.

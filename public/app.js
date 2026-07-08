@@ -1,4 +1,4 @@
-// ns-vse-webdev — small shared JS: nav highlighting, fade-in, mobile toggle
+// nr-vse-webdev — small shared JS: nav highlighting, fade-in, mobile toggle
 document.addEventListener("DOMContentLoaded", () => {
   // Fade-in on load
   document.body.classList.add("fade-in");
