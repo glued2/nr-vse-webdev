@@ -1,6 +1,7 @@
-// nr-vse-webdev — /admin content editor: login gate + fetch-driven textarea
-// editors for the Intro/Details/Contact page content. Vanilla JS, no
-// framework, consistent with the rest of the site.
+// nr-vse-webdev — /admin content editor: login gate + fetch-driven Quill
+// rich-text editors for the Intro/Details/Contact page content. Vanilla JS
+// (Quill is the one exception, loaded locally from /vendor/quill — no build
+// step, no CDN), consistent with the rest of the site.
 document.addEventListener("DOMContentLoaded", () => {
   const disabledPanel = document.getElementById("admin-disabled");
   const loginPanel = document.getElementById("login-panel");
@@ -9,6 +10,30 @@ document.addEventListener("DOMContentLoaded", () => {
   const loginError = document.getElementById("login-error");
   const logoutBtn = document.getElementById("logout-btn");
   const messageBox = document.getElementById("admin-message");
+
+  // pageKey -> Quill instance, created lazily the first time the editor
+  // panel is shown (Quill needs a visible/laid-out container to size its
+  // toolbar correctly).
+  const quillEditors = {};
+
+  const QUILL_TOOLBAR = [
+    [{ header: [2, 3, false] }],
+    ["bold", "italic", "underline"],
+    ["link"],
+    [{ list: "ordered" }, { list: "bullet" }],
+    ["clean"],
+  ];
+
+  function initQuillEditors() {
+    document.querySelectorAll(".quill-editor").forEach((el) => {
+      const pageKey = el.dataset.editor;
+      if (quillEditors[pageKey]) return;
+      quillEditors[pageKey] = new Quill(el, {
+        theme: "snow",
+        modules: { toolbar: QUILL_TOOLBAR },
+      });
+    });
+  }
 
   function showMessage(text, kind) {
     messageBox.textContent = text;
@@ -21,6 +46,9 @@ document.addEventListener("DOMContentLoaded", () => {
     [disabledPanel, loginPanel, editorPanel].forEach((p) => {
       p.hidden = p !== panel;
     });
+    if (panel === editorPanel) {
+      initQuillEditors();
+    }
   }
 
   async function refreshStatus() {
@@ -58,9 +86,15 @@ document.addEventListener("DOMContentLoaded", () => {
     Object.entries(data.pages).forEach(([pageKey, page]) => {
       const card = document.querySelector(`[data-page-key="${pageKey}"]`);
       if (!card) return;
-      const textarea = card.querySelector('[data-field="bodyHtml"]');
+      const quill = quillEditors[pageKey];
       const sourceTag = card.querySelector(".page-source");
-      if (textarea) textarea.value = page.bodyHtml || "";
+      if (quill) {
+        // dangerouslyPasteHTML(html) replaces the whole document, parsing
+        // arbitrary HTML into Quill's internal model (rather than just
+        // poking the DOM), so the editor's state stays consistent with what
+        // the user sees/edits afterwards.
+        quill.clipboard.dangerouslyPasteHTML(page.bodyHtml || "");
+      }
       if (sourceTag) {
         sourceTag.textContent = page.source === "database" ? "from database" : "static fallback";
       }
@@ -96,13 +130,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", async () => {
       const pageKey = btn.dataset.pageKey;
       const card = document.querySelector(`[data-page-key="${pageKey}"]`);
-      const textarea = card.querySelector('[data-field="bodyHtml"]');
+      const quill = quillEditors[pageKey];
       const statusEl = card.querySelector(".admin-status");
+      if (!quill) return;
       statusEl.textContent = "Saving…";
       const res = await fetch(`/admin/content/${pageKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bodyHtml: textarea.value }),
+        body: JSON.stringify({ bodyHtml: quill.root.innerHTML }),
       });
       const data = await res.json();
       if (res.ok && data.ok) {
@@ -117,3 +152,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
   refreshStatus();
 });
+
