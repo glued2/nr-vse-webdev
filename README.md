@@ -25,7 +25,8 @@ Entra ID-gated `/admin` page.
   highlighting and mobile toggle work everywhere without extra code.
 - **`public/admin.html`** / **`public/admin.css`** / **`public/admin.js`** —
   Microsoft Entra ID-gated content editor (see [Content admin](#content-admin)
-  below). Linked from the main nav (as "Admin") but not privileged to view —
+  below) plus a "Stats" tab (see [Usage analytics](#usage-analytics) below).
+  Linked from the main nav (as "Admin") but not privileged to view —
   only to sign in; actual access is enforced entirely by Entra ID. `/admin`
   shows the same full site nav as every other page; once signed in, the
   "Admin" nav item itself swaps to a "Signed in as {name} · Sign out"
@@ -35,15 +36,21 @@ Entra ID-gated `/admin` page.
   dynamically (page layout comes from the static HTML templates, the editable
   body content comes from Azure SQL — see [Database-backed
   content](#database-backed-content)), the `/auth/*` Entra sign-in routes, the
-  `/admin` JSON API, and static assets from `public/`. No build step, no
-  bundler.
+  `/admin` JSON API, `/api/game-event` (see [Usage
+  analytics](#usage-analytics)), and static assets from `public/`. No build
+  step, no bundler.
 - **`db.js`** — Azure SQL access module (managed-identity/Azure AD auth only —
   see below).
 - **`auth.js`** — Microsoft Entra ID sign-in module (workload identity
   federation, zero client secrets — see [Content admin](#content-admin)
   below).
+- **`analytics.js`** — Azure Table Storage access module for the usage
+  analytics dashboard (managed-identity/Azure AD auth only, same "no secrets"
+  pattern as `db.js`/`auth.js` — see [Usage analytics](#usage-analytics)
+  below).
 - **`package.json`** — Dependencies: `express`, `mssql`, `@azure/identity`,
-  `@azure/msal-node`, `express-session`. One script: `npm start`.
+  `@azure/msal-node`, `@azure/data-tables`, `express-session`. One script:
+  `npm start`.
 
 ## Database-backed content
 
@@ -132,6 +139,51 @@ sections (six in total: two on Intro, three on Details, one on Contact).
   out" (linking to `/auth/logout`), driven by the same `/admin/status` check
   the page already performs on load — no extra endpoint.
 
+## Usage analytics
+
+`/admin`'s "Stats" tab shows a small Webalizer-style usage dashboard covering
+both page hits (Intro/Details/Contact/Play: Blocks/Play: Jump) and game plays,
+backed by an Azure Storage Account (Table Storage) provisioned by the
+companion `nr-vse-azure-lab` infra repo — **not** the Azure SQL content
+database.
+
+- **Privacy by design.** No cookies, no persistent visitor identifier, and no
+  IP address is ever stored — there is no way to identify or track an
+  individual visitor across requests. Logged data is purely aggregate: hit
+  counts, request paths, referrers (stripped to origin + path — query strings
+  are dropped since they can carry sensitive tokens/PII), and a coarse browser
+  family (`Chrome`/`Firefox`/`Safari`/`Edge`/`Other`, parsed from the User-Agent
+  rather than storing the raw string, to minimize fingerprinting data). This
+  was a deliberate choice to avoid any UK/EU PECR/GDPR cookie-consent
+  requirement.
+- **Authentication is managed-identity only** — same "no secrets" pattern as
+  `db.js`/`auth.js`. `analytics.js` uses `@azure/data-tables`'s `TableClient`
+  with `@azure/identity`'s `DefaultAzureCredential` against
+  `https://{AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net` — no
+  connection string or storage account key anywhere.
+- **Two tables**, both partitioned by UTC date (`yyyy-MM-dd`) for simple
+  "last N days" range queries:
+  - `PageHits` — one row per page view of `/`, `/details`, `/contact`,
+    `/play`, `/jump` (only; static assets, `/admin/*`, `/auth/*`, and
+    `/api/game-event` itself are not logged, to keep the data meaningful).
+    Columns: `Path`, `Referrer`, `BrowserFamily`.
+  - `GameEvents` — one row per game start/end, written by the new
+    `POST /api/game-event` route, called from `public/tetris.js` (Play:
+    Blocks) and `public/jump.js` (Play: Jump) on game start and game-over
+    (with the final score). Columns: `Game` (`blocks`/`jump`), `Event`
+    (`start`/`end`), `Score` (present only on `end`).
+- **Graceful fallback everywhere** — exactly like `db.js`/`auth.js`: if
+  `AZURE_STORAGE_ACCOUNT_NAME` isn't set or Table Storage isn't reachable,
+  page-hit logging silently no-ops (fire-and-forget — it can never slow down
+  or break a page request), `POST /api/game-event` responds `503` without
+  affecting gameplay (the game JS ignores the failure), and the Stats tab
+  shows a clear "Analytics not configured" message instead of erroring.
+- `GET /admin/stats` (Entra-gated, same `requireAdmin` middleware as the
+  content editor) aggregates the last 30 days of both tables into hit counts
+  by page, hits-by-day for the last 14 days (rendered as a CSS-only bar
+  chart — no external chart library), and per-game play count/high
+  score/average score.
+
 ## Running locally
 
 ```bash
@@ -151,7 +203,11 @@ disabled" message instead of a sign-in link — a full real sign-in can't be
 tested locally without live Entra ID + managed identity connectivity, but you
 can set test values for these three env vars and confirm `/auth/login`
 redirects to the correct `login.microsoftonline.com` URL (building that
-redirect doesn't require real Azure connectivity).
+redirect doesn't require real Azure connectivity). Likewise, without
+`AZURE_STORAGE_ACCOUNT_NAME` set, usage analytics is disabled: page hits
+simply aren't logged, `/api/game-event` returns `503`, and the Stats tab shows
+an "Analytics not configured" message — none of this affects the rest of the
+site.
 
 ## Deployment
 
@@ -178,8 +234,8 @@ the workflow itself) or on manual `workflow_dispatch`. The workflow:
    secrets or publish profiles are stored in this repo.
 4. Configures the App Service's application settings
    (`AZURE_SQL_SERVER_FQDN`, `AZURE_SQL_DATABASE_NAME`, `ENTRA_CLIENT_ID`,
-   `ENTRA_TENANT_ID`, `AZURE_ADMIN_UAMI_CLIENT_ID`) via
-   `az webapp config appsettings set`.
+   `ENTRA_TENANT_ID`, `AZURE_ADMIN_UAMI_CLIENT_ID`,
+   `AZURE_STORAGE_ACCOUNT_NAME`) via `az webapp config appsettings set`.
 5. Deploys the app (`package.json`, `server.js`, `public/`) to the App Service
    using `azure/webapps-deploy@v3`.
 
@@ -197,6 +253,7 @@ For the pipeline to work, configure the following in this repo's settings:
 | `ENTRA_CLIENT_ID`           | The Entra ID App Registration's client (application) ID used for `/admin` sign-in |
 | `ENTRA_TENANT_ID`           | The Entra ID tenant ID |
 | `AZURE_ADMIN_UAMI_CLIENT_ID` | The client ID of the User-Assigned Managed Identity the App Registration federates with (from the `nr-vse-azure-lab` Bicep deployment) |
+| `AZURE_STORAGE_ACCOUNT_NAME` | The Azure Storage account name (Table Storage) from the `nr-vse-azure-lab` Bicep deployment, used for usage analytics |
 
 These are ordinary repository **variables**, not secrets — a client ID and
 tenant ID aren't sensitive on their own (they're visible in the redirect URL
@@ -217,7 +274,10 @@ The deploy workflow also needs the App Service's system-assigned managed
 identity (already granted by the `nr-vse-azure-lab` Bicep deployment) to have
 an Azure AD user/role on the SQL database with permission to create tables
 and read/write `PageContent` — that's configured on the infra side, not here.
-It separately needs the **user-assigned** managed identity referenced by
+It also needs the "Storage Table Data Contributor" role on the
+`AZURE_STORAGE_ACCOUNT_NAME` storage account to read/write the `PageHits`/
+`GameEvents` tables — also configured on the infra side. It separately needs
+the **user-assigned** managed identity referenced by
 `AZURE_ADMIN_UAMI_CLIENT_ID` to be assigned to this App Service and federated
 with the Entra App Registration (issuer = tenant's v2.0 issuer, subject = the
 UAMI's object ID, audience `api://AzureADTokenExchange`) — also configured on
@@ -241,6 +301,9 @@ long-lived client secret or publish profile — the GitHub Actions token is
 exchanged for a short-lived Azure AD token at run time, scoped to this exact
 repo and branch. The same "no stored secret" philosophy carries through to
 the app's own Azure dependencies: the SQL connection uses the App Service's
-managed identity (no SQL password ever exists), and `/admin` sign-in uses
-workload identity federation (no Entra client secret ever exists) — see
-[Content admin](#content-admin) above.
+managed identity (no SQL password ever exists), `/admin` sign-in uses
+workload identity federation (no Entra client secret ever exists — see
+[Content admin](#content-admin) above), and usage analytics uses the same
+managed identity against Azure Table Storage (no storage account key or
+connection string ever exists — see [Usage analytics](#usage-analytics)
+above).

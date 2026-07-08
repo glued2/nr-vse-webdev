@@ -55,6 +55,12 @@
         <a class="btn admin-btn-secondary" id="logout-link" href="/auth/logout">Log out</a>
       </div>
 
+      <div class="admin-tabs" role="tablist">
+        <button type="button" class="admin-tab is-active" data-tab="content" id="tab-content">Content</button>
+        <button type="button" class="admin-tab" data-tab="stats" id="tab-stats">Stats</button>
+      </div>
+
+      <div id="content-panel" data-tab-panel="content">
       <div class="card" data-page-key="intro-what">
         <h2>Intro — What is this? <span class="pill page-source"></span></h2>
         <label class="admin-label">Content</label>
@@ -113,6 +119,42 @@
         </div>
         <button class="btn save-btn" type="button" data-page-key="contact-github">Save</button>
         <span class="admin-status"></span>
+      </div>
+      </div>
+
+      <div id="stats-panel" data-tab-panel="stats" hidden>
+        <div id="stats-disabled" class="card" hidden>
+          <h2>Analytics not configured</h2>
+          <p>
+            Set the <code>AZURE_STORAGE_ACCOUNT_NAME</code> App Service
+            application setting (backed by an Azure Storage account with
+            Table Storage, granted to this app's managed identity) to enable
+            usage analytics.
+          </p>
+        </div>
+        <div id="stats-error" class="card admin-error" hidden></div>
+        <div id="stats-content" hidden>
+          <div class="card">
+            <h2>Hits by page</h2>
+            <table class="stats-table">
+              <thead><tr><th>Path</th><th>Hits</th></tr></thead>
+              <tbody id="stats-hits-body"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h2>Hits by day <span class="pill">last 14 days</span></h2>
+            <div id="stats-bar-chart" class="bar-chart"></div>
+          </div>
+
+          <div class="card">
+            <h2>Games</h2>
+            <table class="stats-table">
+              <thead><tr><th>Game</th><th>Plays</th><th>High score</th><th>Avg. score</th></tr></thead>
+              <tbody id="stats-games-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </main>

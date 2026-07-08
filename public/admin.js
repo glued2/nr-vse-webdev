@@ -10,6 +10,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const adminUsername = document.getElementById("admin-username");
   const messageBox = document.getElementById("admin-message");
   const navAdminItem = document.getElementById("nav-admin-item");
+  const tabButtons = document.querySelectorAll(".admin-tab");
+  const contentPanel = document.getElementById("content-panel");
+  const statsPanel = document.getElementById("stats-panel");
+  const statsDisabled = document.getElementById("stats-disabled");
+  const statsError = document.getElementById("stats-error");
+  const statsContent = document.getElementById("stats-content");
+  const statsHitsBody = document.getElementById("stats-hits-body");
+  const statsGamesBody = document.getElementById("stats-games-body");
+  const statsBarChart = document.getElementById("stats-bar-chart");
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => (
@@ -163,6 +172,93 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   });
+
+  // --- Stats tab (Content / Stats toggle + usage analytics rendering) ---
+
+  function switchTab(tabName) {
+    tabButtons.forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.tab === tabName);
+    });
+    contentPanel.hidden = tabName !== "content";
+    statsPanel.hidden = tabName !== "stats";
+    if (tabName === "stats") {
+      loadStats();
+    }
+  }
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+
+  function renderBarChart(hitsByDay) {
+    statsBarChart.innerHTML = "";
+    const max = Math.max(1, ...hitsByDay.map((d) => d.count));
+    hitsByDay.forEach((d) => {
+      const row = document.createElement("div");
+      row.className = "bar-chart-row";
+      const pct = Math.round((d.count / max) * 100);
+      row.innerHTML =
+        `<span class="bar-chart-label">${escapeHtml(d.date)}</span>` +
+        `<span class="bar-chart-track"><span class="bar-chart-fill" style="width: ${pct}%"></span></span>` +
+        `<span class="bar-chart-count">${d.count}</span>`;
+      statsBarChart.appendChild(row);
+    });
+  }
+
+  function renderStats(summary) {
+    statsHitsBody.innerHTML = "";
+    Object.entries(summary.hitsByPage || {}).forEach(([pagePath, count]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${escapeHtml(pagePath)}</td><td>${count}</td>`;
+      statsHitsBody.appendChild(tr);
+    });
+    if (!Object.keys(summary.hitsByPage || {}).length) {
+      statsHitsBody.innerHTML = `<tr><td colspan="2">No page hits recorded yet.</td></tr>`;
+    }
+
+    renderBarChart(summary.hitsByDay || []);
+
+    statsGamesBody.innerHTML = "";
+    const games = summary.games || {};
+    const gameLabels = { blocks: "Play: Blocks", jump: "Play: Jump" };
+    Object.entries(games).forEach(([gameKey, g]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td>${escapeHtml(gameLabels[gameKey] || gameKey)}</td>` +
+        `<td>${g.plays || 0}</td>` +
+        `<td>${g.highScore || 0}</td>` +
+        `<td>${g.avgScore != null ? g.avgScore : "—"}</td>`;
+      statsGamesBody.appendChild(tr);
+    });
+  }
+
+  async function loadStats() {
+    statsDisabled.hidden = true;
+    statsError.hidden = true;
+    statsContent.hidden = true;
+    try {
+      const res = await fetch("/admin/stats");
+      if (res.status === 401) {
+        showPanel(loginPanel);
+        return;
+      }
+      const data = await res.json();
+      if (!data.configured) {
+        statsDisabled.hidden = false;
+        return;
+      }
+      if (!res.ok) {
+        statsError.textContent = data.error || "Failed to load analytics.";
+        statsError.hidden = false;
+        return;
+      }
+      renderStats(data);
+      statsContent.hidden = false;
+    } catch (err) {
+      statsError.textContent = "Failed to load analytics.";
+      statsError.hidden = false;
+    }
+  }
 
   refreshStatus();
 });

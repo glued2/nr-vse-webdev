@@ -4,7 +4,9 @@
 // being fully static. If the database is unreachable (local dev, or a
 // transient Azure issue), the original static content baked into each HTML
 // file is used as a fallback, so the site never crashes or breaks when SQL
-// isn't available.
+// isn't available. Also logs privacy-preserving usage analytics (page hits,
+// game plays) to Azure Table Storage — see analytics.js — surfaced in the
+// /admin Stats tab.
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -12,6 +14,7 @@ const express = require("express");
 const session = require("express-session");
 const db = require("./db");
 const auth = require("./auth");
+const analytics = require("./analytics");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -28,6 +31,17 @@ app.set("trust proxy", 1);
 if (!auth.isConfigured) {
   console.warn(
     "[auth] Entra sign-in is not fully configured (ENTRA_CLIENT_ID / ENTRA_TENANT_ID / AZURE_ADMIN_UAMI_CLIENT_ID) — the /admin content editor is disabled."
+  );
+}
+
+// No AZURE_STORAGE_ACCOUNT_NAME configured -> usage analytics is disabled
+// entirely (no page-hit/game-event logging, Stats tab shows a "not
+// configured" message) rather than crashing. See analytics.js for the
+// privacy-by-design rationale (no cookies, no IP addresses, no persistent
+// visitor identifiers).
+if (!analytics.isConfigured) {
+  console.log(
+    "[analytics] Azure Table Storage is not configured (AZURE_STORAGE_ACCOUNT_NAME) — usage analytics is disabled."
   );
 }
 
@@ -166,9 +180,26 @@ app.use(
   })
 );
 
-app.get("/", (req, res) => renderPage(res, "index.html"));
-app.get("/details", (req, res) => renderPage(res, "details.html"));
-app.get("/contact", (req, res) => renderPage(res, "contact.html"));
+// Fire-and-forget usage logging for the actual page routes only (not static
+// assets, not /admin/* or /auth/*, not /api/game-event) — analytics.js
+// itself never throws/rejects here, so this is safe to call without
+// awaiting and can never slow down or break a response.
+function recordPageHit(req) {
+  analytics.logPageHit(req.path, req.get("Referer"), req.get("User-Agent"));
+}
+
+app.get("/", (req, res) => {
+  recordPageHit(req);
+  renderPage(res, "index.html");
+});
+app.get("/details", (req, res) => {
+  recordPageHit(req);
+  renderPage(res, "details.html");
+});
+app.get("/contact", (req, res) => {
+  recordPageHit(req);
+  renderPage(res, "contact.html");
+});
 
 // The old direct-file nav links predate DB-backed rendering; redirect them
 // to their dynamic equivalents so DB edits are always reflected regardless
@@ -178,11 +209,54 @@ app.get("/details.html", (req, res) => res.redirect(301, "/details"));
 app.get("/contact.html", (req, res) => res.redirect(301, "/contact"));
 
 app.get("/play", (req, res) => {
+  recordPageHit(req);
   res.sendFile(path.join(PUBLIC_DIR, "play.html"));
 });
 
 app.get("/jump", (req, res) => {
+  recordPageHit(req);
   res.sendFile(path.join(PUBLIC_DIR, "jump.html"));
+});
+
+// --- Game analytics: fire-and-forget events from play.html/jump.html -----
+// Not gated by requireAdmin (any visitor playing a game can post here) and
+// not counted as a page hit itself — this is purely game telemetry (start/
+// end + score), stored in its own GameEvents table by analytics.js. Never
+// breaks gameplay: analytics.js validates + writes, and any failure here
+// just means analytics.logGameEvent() throws so we can respond 503 — the
+// game clients themselves treat this endpoint as fire-and-forget and ignore
+// the response either way.
+const GAME_EVENT_GAMES = ["blocks", "jump"];
+const GAME_EVENT_TYPES = ["start", "end"];
+
+app.post("/api/game-event", async (req, res) => {
+  if (!analytics.isConfigured) {
+    return res.status(503).json({ error: "Analytics is not configured." });
+  }
+
+  const { game, event, score } = req.body || {};
+  if (!GAME_EVENT_GAMES.includes(game)) {
+    return res.status(400).json({ error: "Unknown game." });
+  }
+  if (!GAME_EVENT_TYPES.includes(event)) {
+    return res.status(400).json({ error: "Unknown event." });
+  }
+
+  let numericScore;
+  if (score !== undefined && score !== null) {
+    if (typeof score !== "number" || !Number.isFinite(score)) {
+      return res.status(400).json({ error: "score must be a finite number." });
+    }
+    numericScore = score;
+  }
+
+  try {
+    await analytics.logGameEvent(game, event, numericScore);
+    res.status(204).end();
+  } catch (err) {
+    console.warn(`[analytics] Failed to log game event: ${err.message}`);
+    res.status(503).json({ error: "Analytics is unavailable — event was not recorded." });
+  }
 });
 
 // --- Entra ID sign-in (authorization code flow) --------------------------
@@ -339,6 +413,25 @@ app.post("/admin/content/:pageKey", requireAdmin, async (req, res) => {
   }
 });
 
+// Webalizer-style usage stats for the /admin "Stats" tab — page hits (by
+// page, by day) and game plays/scores, aggregated from Azure Table Storage.
+// See analytics.js for the privacy-by-design rationale (no cookies, no IP
+// addresses, no persistent visitor identifiers — purely aggregate counts).
+app.get("/admin/stats", requireAdmin, async (req, res) => {
+  if (!analytics.isConfigured) {
+    return res.json({ configured: false });
+  }
+  try {
+    const summary = await analytics.getStatsSummary();
+    res.json({ configured: true, ...summary });
+  } catch (err) {
+    console.warn(`[analytics] Failed to load stats summary: ${err.message}`);
+    res
+      .status(503)
+      .json({ configured: true, error: "Analytics storage is unavailable right now." });
+  }
+});
+
 // Serves the Quill rich-text editor's pre-built JS/CSS straight from the npm
 // package (installed via node_modules, no CDN, no manual vendoring/copy
 // step) — used only by public/admin.html.
@@ -356,6 +449,7 @@ app.listen(PORT, () => {
   console.log(`nr-vse-webdev listening on port ${PORT}`);
 });
 
-// Fire-and-forget: don't block server startup on the database being
-// reachable.
+// Fire-and-forget: don't block server startup on the database or analytics
+// storage being reachable.
 seedDatabase();
+analytics.ensureTables();
