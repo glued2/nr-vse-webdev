@@ -1,15 +1,29 @@
-// nr-vse-webdev — /admin content editor: login gate + fetch-driven Quill
-// rich-text editors for the Intro/Details/Contact page content. Vanilla JS
-// (Quill is the one exception, loaded locally from /vendor/quill — no build
-// step, no CDN), consistent with the rest of the site.
+// nr-vse-webdev — /admin content editor: Entra ID sign-in gate + fetch-driven
+// Quill rich-text editors for the Intro/Details/Contact page content. Vanilla
+// JS (Quill is the one exception, loaded locally from /vendor/quill — no
+// build step, no CDN), consistent with the rest of the site.
 document.addEventListener("DOMContentLoaded", () => {
   const disabledPanel = document.getElementById("admin-disabled");
   const loginPanel = document.getElementById("login-panel");
   const editorPanel = document.getElementById("editor-panel");
-  const loginForm = document.getElementById("login-form");
   const loginError = document.getElementById("login-error");
-  const logoutBtn = document.getElementById("logout-btn");
+  const adminUsername = document.getElementById("admin-username");
   const messageBox = document.getElementById("admin-message");
+
+  // Sign-in failures land back here as /admin?error=... (see server.js's
+  // /auth/callback) since a full Entra redirect flow can't report errors any
+  // other way than a query param.
+  const SIGN_IN_ERRORS = {
+    access_denied:
+      "Sign-in was denied — your Microsoft account isn't assigned to this application.",
+    sign_in_failed: "Sign-in failed. Please try again.",
+  };
+  const errorParam = new URLSearchParams(window.location.search).get("error");
+  if (errorParam) {
+    loginError.textContent = SIGN_IN_ERRORS[errorParam] || "Sign-in failed. Please try again.";
+    loginError.hidden = false;
+    window.history.replaceState({}, "", "/admin");
+  }
 
   // pageKey -> Quill instance, created lazily the first time the editor
   // panel is shown (Quill needs a visible/laid-out container to size its
@@ -59,6 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (status.loggedIn) {
+      adminUsername.textContent = (status.user && (status.user.name || status.user.username)) || "admin";
       showPanel(editorPanel);
       await loadContent();
     } else {
@@ -100,31 +115,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-
-  loginForm.addEventListener("submit", async (evt) => {
-    evt.preventDefault();
-    loginError.hidden = true;
-    const password = document.getElementById("password").value;
-    const res = await fetch("/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      loginForm.reset();
-      showPanel(editorPanel);
-      await loadContent();
-    } else {
-      loginError.textContent = data.error || "Login failed.";
-      loginError.hidden = false;
-    }
-  });
-
-  logoutBtn.addEventListener("click", async () => {
-    await fetch("/admin/logout", { method: "POST" });
-    showPanel(loginPanel);
-  });
 
   document.querySelectorAll(".save-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {

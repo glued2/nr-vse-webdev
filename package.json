@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
+    "@azure/msal-node": "^5.4.0",
     "express": "^4.19.2",
     "express-session": "^1.19.0",
     "mssql": "^12.7.0",

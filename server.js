@@ -11,6 +11,7 @@ const path = require("path");
 const express = require("express");
 const session = require("express-session");
 const db = require("./db");
+const auth = require("./auth");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -21,13 +22,12 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 // still work correctly.
 app.set("trust proxy", 1);
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const ADMIN_ENABLED = Boolean(ADMIN_PASSWORD);
-// No ADMIN_PASSWORD configured -> disable admin editing entirely rather than
-// falling back to any hardcoded/default password.
-if (!ADMIN_ENABLED) {
+// No ENTRA_CLIENT_ID/ENTRA_TENANT_ID/AZURE_ADMIN_UAMI_CLIENT_ID configured ->
+// disable admin editing entirely rather than falling back to any insecure
+// default. See auth.js for how sign-in works (Entra ID, no client secret).
+if (!auth.isConfigured) {
   console.warn(
-    "[admin] ADMIN_PASSWORD is not set — the /admin content editor is disabled."
+    "[auth] Entra sign-in is not fully configured (ENTRA_CLIENT_ID / ENTRA_TENANT_ID / AZURE_ADMIN_UAMI_CLIENT_ID) — the /admin content editor is disabled."
   );
 }
 
@@ -149,18 +149,6 @@ async function seedDatabase() {
   }
 }
 
-// Constant-time password comparison so login timing doesn't leak how many
-// leading characters matched.
-function safeCompare(candidate, expected) {
-  const candidateBuf = Buffer.from(String(candidate));
-  const expectedBuf = Buffer.from(String(expected));
-  if (candidateBuf.length !== expectedBuf.length) {
-    crypto.timingSafeEqual(expectedBuf, expectedBuf);
-    return false;
-  }
-  return crypto.timingSafeEqual(candidateBuf, expectedBuf);
-}
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(
@@ -197,47 +185,95 @@ app.get("/jump", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "jump.html"));
 });
 
-// --- Admin: password-gated content editor -------------------------------
+// --- Entra ID sign-in (authorization code flow) --------------------------
+// No client secret anywhere — see auth.js. The App Registration trusts this
+// App Service's user-assigned managed identity via workload identity
+// federation instead.
+
+function buildRedirectUri(req) {
+  return `${req.protocol}://${req.get("host")}/auth/callback`;
+}
+
+app.get("/auth/login", async (req, res) => {
+  if (!auth.isConfigured) {
+    return res.status(503).send("Entra sign-in is not configured on this server.");
+  }
+  try {
+    // Random per-attempt value stored in the session and checked on
+    // callback, so a forged/replayed callback request can't complete a
+    // sign-in on someone else's behalf (CSRF protection).
+    const state = crypto.randomBytes(16).toString("hex");
+    req.session.authState = state;
+    const url = await auth.getAuthCodeUrl(buildRedirectUri(req), state);
+    res.redirect(url);
+  } catch (err) {
+    console.error(`[auth] Failed to start sign-in: ${err.message}`);
+    res.status(500).send("Failed to start sign-in.");
+  }
+});
+
+app.get("/auth/callback", async (req, res) => {
+  if (!auth.isConfigured) {
+    return res.status(503).send("Entra sign-in is not configured on this server.");
+  }
+  if (req.query.error) {
+    // e.g. AADSTS50105 when a user isn't assigned to the Enterprise
+    // Application — Entra itself rejects them before this code runs.
+    console.warn(
+      `[auth] Sign-in failed: ${req.query.error} - ${req.query.error_description || ""}`
+    );
+    return res.redirect("/admin?error=access_denied");
+  }
+  const expectedState = req.session.authState;
+  delete req.session.authState;
+  if (!req.query.state || req.query.state !== expectedState) {
+    return res.status(400).send("Invalid sign-in state.");
+  }
+  try {
+    const user = await auth.acquireTokenByCode(req.query.code, buildRedirectUri(req));
+    req.session.user = user;
+    res.redirect("/admin");
+  } catch (err) {
+    console.error(`[auth] Sign-in callback failed: ${err.message}`);
+    res.redirect("/admin?error=sign_in_failed");
+  }
+});
+
+app.get("/auth/logout", (req, res) => {
+  const postLogoutRedirectUri = `${req.protocol}://${req.get("host")}/`;
+  if (!req.session) {
+    return res.redirect(auth.logoutUrl(postLogoutRedirectUri));
+  }
+  req.session.destroy(() => {
+    res.redirect(auth.logoutUrl(postLogoutRedirectUri));
+  });
+});
+
+// --- Admin: Entra-gated content editor ------------------------------------
 // Not linked from the main site nav; reachable only by knowing the /admin
-// URL, and every write requires the ADMIN_PASSWORD-gated session cookie.
+// URL, and every write requires a session established by signing in with
+// Microsoft Entra ID (see /auth/* above).
 
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin.html"));
 });
 
 app.get("/admin/status", (req, res) => {
+  const user = req.session && req.session.user;
   res.json({
-    adminEnabled: ADMIN_ENABLED,
-    loggedIn: Boolean(req.session && req.session.isAdmin),
+    adminEnabled: auth.isConfigured,
+    loggedIn: Boolean(user),
+    user: user ? { name: user.name, username: user.username } : null,
   });
 });
 
-app.post("/admin/login", (req, res) => {
-  if (!ADMIN_ENABLED) {
-    return res
-      .status(503)
-      .json({ error: "Admin editing is disabled (ADMIN_PASSWORD is not configured)." });
-  }
-  const { password } = req.body || {};
-  if (typeof password === "string" && safeCompare(password, ADMIN_PASSWORD)) {
-    req.session.isAdmin = true;
-    return res.json({ ok: true });
-  }
-  return res.status(401).json({ error: "Incorrect password." });
-});
-
-app.post("/admin/logout", (req, res) => {
-  if (!req.session) return res.json({ ok: true });
-  req.session.destroy(() => res.json({ ok: true }));
-});
-
 function requireAdmin(req, res, next) {
-  if (!ADMIN_ENABLED) {
+  if (!auth.isConfigured) {
     return res
       .status(503)
-      .json({ error: "Admin editing is disabled (ADMIN_PASSWORD is not configured)." });
+      .json({ error: "Admin editing is disabled (Entra sign-in is not configured)." });
   }
-  if (!req.session || !req.session.isAdmin) {
+  if (!req.session || !req.session.user) {
     return res.status(401).json({ error: "Not authenticated." });
   }
   next();

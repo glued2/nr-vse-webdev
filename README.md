@@ -2,8 +2,8 @@
 
 A jazzy little 3-page demo site, served by a minimal Express app and
 deployed to Azure App Service via GitHub Actions. The Intro/Details/Contact
-page content is stored in an Azure SQL Database and editable through a
-password-gated `/admin` page.
+page content is stored in an Azure SQL Database and editable through an
+Entra ID-gated `/admin` page.
 
 ## What's here
 
@@ -18,17 +18,22 @@ password-gated `/admin` page.
   gradient background, glassy cards, gradient nav bar) and a small script for
   active-link highlighting, fade-in on load, and the mobile nav toggle.
 - **`public/admin.html`** / **`public/admin.css`** / **`public/admin.js`** —
-  Password-gated content editor (see [Content admin](#content-admin) below).
-  Not linked from the main nav; reachable only at `/admin`.
+  Microsoft Entra ID-gated content editor (see [Content admin](#content-admin)
+  below). Linked from the main nav (as "Admin") but not privileged to view —
+  only to sign in; actual access is enforced entirely by Entra ID.
 - **`server.js`** — Express server. Serves `/`, `/details`, `/contact`
   dynamically (page layout comes from the static HTML templates, the editable
   body content comes from Azure SQL — see [Database-backed
-  content](#database-backed-content)), plus the `/admin` JSON API, and static
-  assets from `public/`. No build step, no bundler.
+  content](#database-backed-content)), the `/auth/*` Entra sign-in routes, the
+  `/admin` JSON API, and static assets from `public/`. No build step, no
+  bundler.
 - **`db.js`** — Azure SQL access module (managed-identity/Azure AD auth only —
   see below).
+- **`auth.js`** — Microsoft Entra ID sign-in module (workload identity
+  federation, zero client secrets — see [Content admin](#content-admin)
+  below).
 - **`package.json`** — Dependencies: `express`, `mssql`, `@azure/identity`,
-  `express-session`. One script: `npm start`.
+  `@azure/msal-node`, `express-session`. One script: `npm start`.
 
 ## Database-backed content
 
@@ -69,16 +74,37 @@ strip or break the page's visual layout.
 
 ## Content admin
 
-`/admin` is a password-gated editor for each page's editable card sections
-(six in total: two on Intro, three on Details, one on Contact).
+`/admin` is a Microsoft Entra ID-gated editor for each page's editable card
+sections (six in total: two on Intro, three on Details, one on Contact).
 
-- Not advertised in the site's main nav — reachable only by URL + password.
-- Login posts to `/admin/login`, checked against the `ADMIN_PASSWORD`
-  environment variable (constant-time compare). **If `ADMIN_PASSWORD` isn't
-  set, admin editing is disabled entirely** — there is no default/fallback
-  password.
-- A signed, HTTP-only session cookie (via `express-session`) keeps you logged
-  in across all the edit forms; `/admin/logout` clears it.
+- Linked from the main site nav ("Admin"). It's fine to advertise the URL:
+  Entra ID (not app code) decides who can actually sign in.
+- Sign-in is the standard OAuth2/OIDC **authorization code flow**: `/admin`
+  shows a "Sign in with Microsoft" link to `GET /auth/login`, which redirects
+  to Microsoft's authorize endpoint; `GET /auth/callback` completes the flow
+  and stores a minimal identity (`name`, `username`, `oid`) in the session.
+- **Zero client secret.** The Entra App Registration's credential is a
+  federated trust to this App Service's **User-Assigned Managed Identity**
+  (workload identity federation) instead of a stored secret. At runtime,
+  `auth.js` fetches a short-lived managed identity token for the fixed
+  audience `api://AzureADTokenExchange/.default` and hands it to
+  `@azure/msal-node`'s `ConfidentialClientApplication` as an async
+  `clientAssertion` callback — MSAL calls this itself, on demand, every time
+  it needs a freshly-signed assertion, so nothing is cached or stored
+  long-term. This mirrors the SQL connection's "no password anywhere"
+  pattern, just for a different Azure AD credential type.
+- **No allow-list/role check in app code.** The Entra Enterprise Application
+  has "Assignment required = Yes"; the environment owner assigns which
+  users/groups may sign in. An unassigned user is rejected by Entra itself
+  during sign-in (`AADSTS50105`) before `/auth/callback` is ever reached —
+  the app only checks "did the auth code flow complete successfully at all"
+  (i.e. `req.session.user` is set).
+- **If Entra isn't fully configured** (`ENTRA_CLIENT_ID` /
+  `ENTRA_TENANT_ID` / `AZURE_ADMIN_UAMI_CLIENT_ID` env vars), admin editing is
+  disabled entirely with a clear message — there is no insecure fallback.
+- `GET /auth/logout` destroys the local session **and** redirects to Entra's
+  own logout endpoint, for a full sign-out rather than just a local cookie
+  clear.
 - Each section has a [Quill](https://quilljs.com) rich-text (WYSIWYG) editor,
   pre-filled from the database (or the static fallback if the DB is
   unavailable), with its own Save button that `POST`s the rendered HTML
@@ -86,9 +112,9 @@ strip or break the page's visual layout.
   bundled via the `quill` npm package (pinned to `1.3.7`, the last release
   with a prebuilt `dist/` bundle suited to a plain `<script>` tag) and served
   locally from `node_modules` — no CDN.
-- All `/admin/*` write routes require the auth cookie (401 otherwise) and
-  return a graceful error (503) if Azure SQL can't be reached rather than
-  crashing.
+- All `/admin/*` write routes require an authenticated session (401
+  otherwise) and return a graceful error (503) if Azure SQL can't be reached
+  rather than crashing.
 
 ## Running locally
 
@@ -103,8 +129,13 @@ Without `AZURE_SQL_SERVER_FQDN`/`AZURE_SQL_DATABASE_NAME` set (the normal
 local case — there's no local Azure managed identity to authenticate with),
 the site automatically falls back to the static content baked into each HTML
 file, and `/admin` shows that same fallback content (read-only in practice,
-since saves need the database). Set `ADMIN_PASSWORD` in your shell to try the
-`/admin` login flow locally.
+since saves need the database). Without `ENTRA_CLIENT_ID` /
+`ENTRA_TENANT_ID` / `AZURE_ADMIN_UAMI_CLIENT_ID` set, `/admin` shows a "sign-in
+disabled" message instead of a sign-in link — a full real sign-in can't be
+tested locally without live Entra ID + managed identity connectivity, but you
+can set test values for these three env vars and confirm `/auth/login`
+redirects to the correct `login.microsoftonline.com` URL (building that
+redirect doesn't require real Azure connectivity).
 
 ## Deployment
 
@@ -130,7 +161,8 @@ the workflow itself) or on manual `workflow_dispatch`. The workflow:
 3. Logs into Azure using **OIDC federated authentication** — no client
    secrets or publish profiles are stored in this repo.
 4. Configures the App Service's application settings
-   (`AZURE_SQL_SERVER_FQDN`, `AZURE_SQL_DATABASE_NAME`, `ADMIN_PASSWORD`) via
+   (`AZURE_SQL_SERVER_FQDN`, `AZURE_SQL_DATABASE_NAME`, `ENTRA_CLIENT_ID`,
+   `ENTRA_TENANT_ID`, `AZURE_ADMIN_UAMI_CLIENT_ID`) via
    `az webapp config appsettings set`.
 5. Deploys the app (`package.json`, `server.js`, `public/`) to the App Service
    using `azure/webapps-deploy@v3`.
@@ -146,6 +178,14 @@ For the pipeline to work, configure the following in this repo's settings:
 | `AZURE_WEBAPP_NAME`         | The App Service name output (`webAppName`) from the `nr-vse-azure-lab` Bicep deployment |
 | `AZURE_SQL_SERVER_FQDN`     | The Azure SQL logical server FQDN from the `nr-vse-azure-lab` Bicep deployment (e.g. `sql-vse-lab-xxxxx.database.windows.net`) |
 | `AZURE_SQL_DATABASE_NAME`   | The Azure SQL database name from the `nr-vse-azure-lab` Bicep deployment |
+| `ENTRA_CLIENT_ID`           | The Entra ID App Registration's client (application) ID used for `/admin` sign-in |
+| `ENTRA_TENANT_ID`           | The Entra ID tenant ID |
+| `AZURE_ADMIN_UAMI_CLIENT_ID` | The client ID of the User-Assigned Managed Identity the App Registration federates with (from the `nr-vse-azure-lab` Bicep deployment) |
+
+These are ordinary repository **variables**, not secrets — a client ID and
+tenant ID aren't sensitive on their own (they're visible in the redirect URL
+of every sign-in attempt), and there's no client secret to protect since this
+app uses workload identity federation instead.
 
 **Repository secrets** (same names/values pattern as the sibling
 `nr-vse-azure-lab` repo, since both authenticate via OIDC to the same Azure AD
@@ -156,12 +196,16 @@ app registration):
 | `AZURE_CLIENT_ID`          | App registration (client) ID          |
 | `AZURE_TENANT_ID`          | Azure AD tenant ID                    |
 | `AZURE_SUBSCRIPTION_ID`    | Target Azure subscription ID          |
-| `ADMIN_PASSWORD`           | Password for the `/admin` content editor. Passed through to the App Service as an app setting during deploy. **Required** for `/admin` to work at all — if unset, admin editing stays disabled. |
 
 The deploy workflow also needs the App Service's system-assigned managed
 identity (already granted by the `nr-vse-azure-lab` Bicep deployment) to have
 an Azure AD user/role on the SQL database with permission to create tables
 and read/write `PageContent` — that's configured on the infra side, not here.
+It separately needs the **user-assigned** managed identity referenced by
+`AZURE_ADMIN_UAMI_CLIENT_ID` to be assigned to this App Service and federated
+with the Entra App Registration (issuer = tenant's v2.0 issuer, subject = the
+UAMI's object ID, audience `api://AzureADTokenExchange`) — also configured on
+the infra side.
 
 **One-time Azure AD setup:** the App Registration used for OIDC needs a
 federated credential for this repo. Either reuse the App Registration from
@@ -179,4 +223,8 @@ with audience `api://AzureADTokenExchange`.
 Auth to Azure uses OpenID Connect (OIDC) federated credentials instead of a
 long-lived client secret or publish profile — the GitHub Actions token is
 exchanged for a short-lived Azure AD token at run time, scoped to this exact
-repo and branch.
+repo and branch. The same "no stored secret" philosophy carries through to
+the app's own Azure dependencies: the SQL connection uses the App Service's
+managed identity (no SQL password ever exists), and `/admin` sign-in uses
+workload identity federation (no Entra client secret ever exists) — see
+[Content admin](#content-admin) above.
