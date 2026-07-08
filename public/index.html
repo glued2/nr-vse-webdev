@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ns-vse-webdev — Intro</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="fade-init">
+  <nav class="navbar">
+    <a class="brand" href="/">ns-vse-webdev</a>
+    <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+    <ul class="nav-links">
+      <li><a href="/index.html">Intro</a></li>
+      <li><a href="/details.html">Details</a></li>
+      <li><a href="/contact.html">Contact</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <h1>Hey, welcome aboard! 🎷</h1>
+      <p class="subtitle">
+        This is a small intro/demo site — three pages of plain HTML, CSS and vanilla JS,
+        built to show off a lightweight deployment pipeline running on Azure App Service.
+      </p>
+    </section>
+
+    <div class="card">
+      <h2>What is this?</h2>
+      <p>
+        <strong>ns-vse-webdev</strong> is a tiny static site served by a minimal
+        Express server. No frameworks, no build step — just HTML, CSS and JS files
+        served straight up. It exists mainly to demonstrate a clean, secretless
+        CI/CD pipeline from GitHub to Azure.
+      </p>
+      <p>
+        Curious about the code, the pipeline, or how it's all wired together?
+        Check out the repo on GitHub:
+      </p>
+      <p>
+        <a class="btn" href="https://github.com/glued2/ns-vse-webdev" target="_blank" rel="noopener">
+          View the repo on GitHub
+        </a>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Where to next?</h2>
+      <ul>
+        <li>Head to <a class="inline-link" href="/details.html">Details</a> to learn how this site was built and deployed.</li>
+        <li>Or say hi on the <a class="inline-link" href="/contact.html">Contact</a> page.</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

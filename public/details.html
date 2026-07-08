@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ns-vse-webdev — Details</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="fade-init">
+  <nav class="navbar">
+    <a class="brand" href="/">ns-vse-webdev</a>
+    <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+    <ul class="nav-links">
+      <li><a href="/index.html">Intro</a></li>
+      <li><a href="/details.html">Details</a></li>
+      <li><a href="/contact.html">Contact</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <h1>How the sausage gets made 🌭</h1>
+      <p class="subtitle">
+        Spoiler: it involved a lot of AI-assisted typing and remarkably few secrets.
+      </p>
+    </section>
+
+    <div class="card">
+      <h2>Built with GitHub Copilot</h2>
+      <p>
+        This site — pages, styling, tiny Express server, and the whole deployment
+        pipeline — was built with AI assistance using <strong>GitHub Copilot</strong>.
+        Yes, even this sentence. Copilot helped scaffold the HTML/CSS/JS, wire up the
+        Node server, and author the GitHub Actions workflow that ships it to Azure.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>The infrastructure</h2>
+      <p>
+        The app runs on a deliberately cheap and cheerful setup: a
+        <span class="pill">B1 Basic</span> tier <strong>Azure Linux App Service</strong>,
+        provisioned entirely as code using <strong>Bicep</strong> in a companion
+        "lab" repo. No clicking around the Azure Portal — the infra is defined,
+        versioned, and repeatable.
+      </p>
+      <ul>
+        <li>Runtime: <span class="pill">NODE|20-lts</span> on Linux App Service</li>
+        <li>Infra-as-code: Bicep templates in a sibling repo</li>
+        <li>App code: this repo — plain static files behind a minimal Express server</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>The deployment pipeline</h2>
+      <p>
+        Every push to <span class="pill">main</span> triggers a
+        <strong>GitHub Actions</strong> workflow that:
+      </p>
+      <ul>
+        <li>Checks out the code and sets up Node.js 20</li>
+        <li>Installs dependencies</li>
+        <li>Logs into Azure using <strong>OIDC federated authentication</strong> —
+          no client secrets or publish profiles stored anywhere</li>
+        <li>Deploys straight to the App Service via
+          <span class="pill">azure/webapps-deploy</span></li>
+      </ul>
+      <p>
+        The app name itself is never hardcoded — it's injected via a repository
+        variable, since Bicep gives the real App Service a unique, generated suffix.
+      </p>
+    </div>
+  </main>
+
+  <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
