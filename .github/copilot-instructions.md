@@ -11,16 +11,27 @@ editable via a password-gated `/admin` page.
 ## Structure
 
 - `public/index.html`, `public/details.html`, `public/contact.html` — the
-  three page templates. Layout/nav/styling is static; the editable body
-  content is wrapped in `<!-- CONTENT:<key>:start/end -->` marker comments
-  and is swapped for the current Azure SQL content at request time (falling
-  back to the static content in the file if the DB is unavailable).
+  three page templates. Layout/nav/styling, the hero, and each
+  `<div class="card">` wrapper are static; only the *inner* content of each
+  card (heading, paragraphs, lists, links) is wrapped in
+  `<!-- CONTENT:<key>:start/end -->` marker comments and swapped for the
+  current Azure SQL content at request time (falling back to the static
+  content in the file if the DB is unavailable). Content is split per card
+  (one `PageKey`/marker per editable section, e.g. `intro-what`,
+  `details-infra`) rather than one blob per page, since the admin editor is a
+  Quill rich-text (WYSIWYG) editor that can only produce generic semantic
+  HTML — keeping the hero/card chrome out of the editable region means an
+  edit can never break the page's visual structure.
   `public/styles.css` and `public/app.js` provide shared nav/styling
   (gradient background, glassy cards, nav bar, active-link highlighting,
   mobile nav toggle) across all pages.
 - `public/admin.html` / `public/admin.css` / `public/admin.js` — password-gated
-  content editor. Not linked from the main nav; reachable only at `/admin`.
-  Vanilla JS talking to the JSON API on `/admin/*` in `server.js`.
+  content editor, one Quill editor card per editable section. Not linked from
+  the main nav; reachable only at `/admin`. Vanilla JS talking to the JSON
+  API on `/admin/*` in `server.js`; Quill's JS/CSS are bundled via the
+  `quill` npm package (pinned to `1.3.7`, the last release with a prebuilt
+  `dist/` bundle) and served from `node_modules` via a `/vendor/quill`
+  static route — no CDN.
 - `server.js` — Express server: `express.static` (with `index:false`) serves
   `public/`, plus explicit `GET /`, `/details`, `/contact` routes that render
   DB-backed content into the static templates, `301` redirects from the old
@@ -28,15 +39,17 @@ editable via a password-gated `/admin` page.
   routes, and the `/admin` page + JSON API (login/logout/status/content).
 - `db.js` — Azure SQL access (see below). Exposes `isConfigured`,
   `ensureSchemaAndSeed`, `getPageContent`, `getAllPageContent`,
-  `setPageContent`.
+  `setPageContent`, `pruneLegacyKeys`.
 - `package.json` — dependencies: `express`, `mssql`, `@azure/identity`,
-  `express-session`. One script: `npm start` (`node server.js`).
+  `express-session`, `quill`. One script: `npm start` (`node server.js`).
 
 ## Database-backed content & admin page
 
 - Content lives in a `PageContent` table (`PageKey`, `Title`, `BodyHtml`,
   `UpdatedAt`) in an Azure SQL Database provisioned by the companion
-  `nr-vse-azure-lab` infra repo.
+  `nr-vse-azure-lab` infra repo. One row per editable card *section*, not per
+  whole page (see `SECTIONS` in `server.js`) — e.g. Intro has two sections
+  (`intro-what`, `intro-next`), Details has three, Contact has one.
 - **Auth is managed-identity only — never a SQL password.** `db.js` uses
   `@azure/identity`'s `DefaultAzureCredential` to get an Azure AD token for
   the App Service's system-assigned managed identity (scope
@@ -47,7 +60,9 @@ editable via a password-gated `/admin` page.
 - Schema creation + seeding (from the static templates' current content) runs
   fire-and-forget on server startup, guarded by `IF NOT EXISTS` at both the
   table and per-row level — safe to run on every deploy, never overwrites
-  edited content.
+  edited content. Startup also prunes any leftover legacy whole-page rows
+  (`intro`/`details`/`contact`, from before content was split per section)
+  via `db.pruneLegacyKeys`.
 - **Local dev has no real Azure SQL access.** When
   `AZURE_SQL_SERVER_FQDN`/`AZURE_SQL_DATABASE_NAME` are unset, or any DB call
   fails, every route/handler catches the error and falls back to the static
@@ -56,15 +71,21 @@ editable via a password-gated `/admin` page.
 - `/admin` is gated by the `ADMIN_PASSWORD` env var (constant-time compare,
   `express-session` cookie). **If `ADMIN_PASSWORD` is unset, admin editing is
   disabled entirely** — never fall back to a default/hardcoded password.
+  Each section is edited via a Quill rich-text editor (not a raw-HTML
+  textarea) — Quill only preserves generic semantic HTML, which is exactly
+  why the surrounding `.hero`/`.card` chrome must stay outside the
+  `CONTENT:<key>` markers.
 
 ## Conventions
 
 - Keep it simple: don't introduce a bundler, framework, or build step for
   what's meant to stay a minimal, dependency-light demo.
-- Any new DB-backed page should follow the existing pattern: static HTML
-  template with `CONTENT:<key>` markers, an explicit route in `server.js`
-  that splices in DB content with a static fallback, and a corresponding
-  `PAGES` entry + admin editor card if it should be editable.
+- Any new DB-backed card/section should follow the existing pattern: wrap
+  only its inner content (heading, paragraphs, lists, links — never the
+  surrounding `.hero`/`.card` chrome) in `CONTENT:<key>` markers, add a
+  corresponding `SECTIONS` entry in `server.js`, and add a matching admin
+  editor card in `public/admin.html` (the admin JS is generic/data-attribute
+  driven, so no `admin.js` changes are needed for a new section).
 - Any purely static new page should still follow the pre-existing pattern:
   add the HTML file under `public/`, add an explicit route in `server.js`,
   and reuse `styles.css`/`app.js` for nav/styling consistency.

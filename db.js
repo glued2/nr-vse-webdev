@@ -145,10 +145,27 @@ async function setPageContent(pageKey, title, bodyHtml) {
   });
 }
 
+// Deletes any rows whose PageKey is in `keys` — used to prune legacy
+// whole-page rows left over from before content was split per editable card
+// section. Idempotent: a no-op once the rows are already gone. Never throws
+// if the table doesn't exist yet (ensureSchemaAndSeed always runs first).
+async function pruneLegacyKeys(keys) {
+  if (!keys || keys.length === 0) return;
+  return withConnection(async (pool) => {
+    for (const key of keys) {
+      await pool
+        .request()
+        .input("pageKey", sql.NVarChar(50), key)
+        .query(`DELETE FROM ${TABLE_NAME} WHERE PageKey = @pageKey`);
+    }
+  });
+}
+
 module.exports = {
   isConfigured,
   ensureSchemaAndSeed,
   getPageContent,
   getAllPageContent,
   setPageContent,
+  pruneLegacyKeys,
 };
