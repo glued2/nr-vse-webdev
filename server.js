@@ -24,6 +24,10 @@ app.get("/play", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "play.html"));
 });
 
+app.get("/jump", (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "jump.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`nr-vse-webdev listening on port ${PORT}`);
 });
