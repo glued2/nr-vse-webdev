@@ -36,7 +36,12 @@ The site deploys to a low-cost **Azure Linux App Service** (B1 Basic tier,
 in the companion repo
 [`glued2/nr-vse-azure-lab`](https://github.com/glued2/nr-vse-azure-lab). That
 Bicep deployment outputs the generated App Service name (`webAppName`) — the
-real name includes a `uniqueString` suffix, so it's never hardcoded here.
+real name includes a `uniqueString` suffix, so it's never hardcoded here. That
+App Service is provisioned in the `swedencentral` region and is tagged
+`Delete=auto` — it's ephemeral and gets torn down and recreated nightly by
+the infra repo's workflows, so site content doesn't survive a recreation.
+After each nightly rebuild, re-run this repo's deploy workflow (manual
+`workflow_dispatch` is fine) to redeploy the site.
 
 Deployment is handled by
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which runs on
