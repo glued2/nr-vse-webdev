@@ -6,6 +6,7 @@
   <title>nr-vse-webdev — Admin</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/vendor/quill/quill.snow.css" />
   <link rel="stylesheet" href="/admin.css" />
 </head>
 <body class="fade-init">
@@ -49,24 +50,30 @@
 
       <div class="card" data-page-key="intro">
         <h2>Intro <span class="pill page-source"></span></h2>
-        <label class="admin-label">HTML content</label>
-        <textarea class="admin-textarea" rows="12" data-field="bodyHtml"></textarea>
+        <label class="admin-label">Content</label>
+        <div class="quill-editor-container">
+          <div class="quill-editor" data-editor="intro"></div>
+        </div>
         <button class="btn save-btn" type="button" data-page-key="intro">Save Intro</button>
         <span class="admin-status"></span>
       </div>
 
       <div class="card" data-page-key="details">
         <h2>Details <span class="pill page-source"></span></h2>
-        <label class="admin-label">HTML content</label>
-        <textarea class="admin-textarea" rows="12" data-field="bodyHtml"></textarea>
+        <label class="admin-label">Content</label>
+        <div class="quill-editor-container">
+          <div class="quill-editor" data-editor="details"></div>
+        </div>
         <button class="btn save-btn" type="button" data-page-key="details">Save Details</button>
         <span class="admin-status"></span>
       </div>
 
       <div class="card" data-page-key="contact">
         <h2>Contact <span class="pill page-source"></span></h2>
-        <label class="admin-label">HTML content</label>
-        <textarea class="admin-textarea" rows="12" data-field="bodyHtml"></textarea>
+        <label class="admin-label">Content</label>
+        <div class="quill-editor-container">
+          <div class="quill-editor" data-editor="contact"></div>
+        </div>
         <button class="btn save-btn" type="button" data-page-key="contact">Save Contact</button>
         <span class="admin-status"></span>
       </div>
@@ -75,6 +82,7 @@
 
   <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
 
+  <script src="/vendor/quill/quill.js"></script>
   <script src="/app.js"></script>
   <script src="/admin.js"></script>
 </body>

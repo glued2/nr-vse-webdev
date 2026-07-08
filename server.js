@@ -270,6 +270,14 @@ app.post("/admin/content/:pageKey", requireAdmin, async (req, res) => {
   }
 });
 
+// Serves the Quill rich-text editor's pre-built JS/CSS straight from the npm
+// package (installed via node_modules, no CDN, no manual vendoring/copy
+// step) — used only by public/admin.html.
+app.use(
+  "/vendor/quill",
+  express.static(path.join(__dirname, "node_modules", "quill", "dist"))
+);
+
 // Registered last (and with index:false) so it never shadows the dynamic
 // "/" route or the .html redirects above — it only serves concrete static
 // assets (CSS/JS/images/play & jump pages/admin shell).
