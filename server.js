@@ -250,9 +250,11 @@ app.get("/auth/logout", (req, res) => {
 });
 
 // --- Admin: Entra-gated content editor ------------------------------------
-// Not linked from the main site nav; reachable only by knowing the /admin
-// URL, and every write requires a session established by signing in with
-// Microsoft Entra ID (see /auth/* above).
+// Linked from the main nav on every page (as "Admin"), swapping to a
+// "Signed in as {name} · Sign out" indicator once signed in — access itself
+// is still enforced entirely by every write requiring a session established
+// by signing in with Microsoft Entra ID (see /auth/* above), not by keeping
+// the URL secret.
 
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin.html"));
