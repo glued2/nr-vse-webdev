@@ -37,6 +37,22 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Configure App Service settings
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RESOURCE_GROUP=$(az webapp list \
+              --query "[?name=='${{ vars.AZURE_WEBAPP_NAME }}'].resourceGroup" \
+              -o tsv)
+            az webapp config appsettings set \
+              --name "${{ vars.AZURE_WEBAPP_NAME }}" \
+              --resource-group "$RESOURCE_GROUP" \
+              --settings \
+                AZURE_SQL_SERVER_FQDN="${{ vars.AZURE_SQL_SERVER_FQDN }}" \
+                AZURE_SQL_DATABASE_NAME="${{ vars.AZURE_SQL_DATABASE_NAME }}" \
+                ADMIN_PASSWORD="${{ secrets.ADMIN_PASSWORD }}"
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:

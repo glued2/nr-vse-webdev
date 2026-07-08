@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nr-vse-webdev — Admin</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/admin.css" />
+</head>
+<body class="fade-init">
+  <nav class="navbar">
+    <a class="brand" href="/">nr-vse-webdev</a>
+    <span class="admin-tag">Admin</span>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <h1>Content admin 🛠️</h1>
+      <p class="subtitle">Edit the Intro, Details, and Contact page content stored in Azure SQL.</p>
+    </section>
+
+    <div id="admin-message" class="card admin-message" hidden></div>
+
+    <div id="admin-disabled" class="card" hidden>
+      <h2>Admin editing is disabled</h2>
+      <p>
+        <code>ADMIN_PASSWORD</code> is not configured on this server, so the
+        content editor is unavailable. Set the <code>ADMIN_PASSWORD</code>
+        environment variable (App Service application setting) to enable it.
+      </p>
+    </div>
+
+    <div id="login-panel" class="card" hidden>
+      <h2>Log in</h2>
+      <form id="login-form">
+        <label class="admin-label" for="password">Password</label>
+        <input class="admin-input" type="password" id="password" name="password" autocomplete="current-password" required />
+        <button class="btn" type="submit">Log in</button>
+      </form>
+      <p id="login-error" class="admin-error" hidden></p>
+    </div>
+
+    <div id="editor-panel" hidden>
+      <div class="card admin-toolbar">
+        <p>Logged in as admin.</p>
+        <button class="btn admin-btn-secondary" id="logout-btn" type="button">Log out</button>
+      </div>
+
+      <div class="card" data-page-key="intro">
+        <h2>Intro <span class="pill page-source"></span></h2>
+        <label class="admin-label">HTML content</label>
+        <textarea class="admin-textarea" rows="12" data-field="bodyHtml"></textarea>
+        <button class="btn save-btn" type="button" data-page-key="intro">Save Intro</button>
+        <span class="admin-status"></span>
+      </div>
+
+      <div class="card" data-page-key="details">
+        <h2>Details <span class="pill page-source"></span></h2>
+        <label class="admin-label">HTML content</label>
+        <textarea class="admin-textarea" rows="12" data-field="bodyHtml"></textarea>
+        <button class="btn save-btn" type="button" data-page-key="details">Save Details</button>
+        <span class="admin-status"></span>
+      </div>
+
+      <div class="card" data-page-key="contact">
+        <h2>Contact <span class="pill page-source"></span></h2>
+        <label class="admin-label">HTML content</label>
+        <textarea class="admin-textarea" rows="12" data-field="bodyHtml"></textarea>
+        <button class="btn save-btn" type="button" data-page-key="contact">Save Contact</button>
+        <span class="admin-status"></span>
+      </div>
+    </div>
+  </main>
+
+  <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
+
+  <script src="/app.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>
