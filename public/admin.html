@@ -18,7 +18,7 @@
   <main>
     <section class="hero">
       <h1>Content admin 🛠️</h1>
-      <p class="subtitle">Edit the Intro, Details, and Contact page content stored in Azure SQL.</p>
+      <p class="subtitle">Edit the individual content sections of the Intro, Details, and Contact pages, stored in Azure SQL.</p>
     </section>
 
     <div id="admin-message" class="card admin-message" hidden></div>
@@ -48,33 +48,63 @@
         <button class="btn admin-btn-secondary" id="logout-btn" type="button">Log out</button>
       </div>
 
-      <div class="card" data-page-key="intro">
-        <h2>Intro <span class="pill page-source"></span></h2>
+      <div class="card" data-page-key="intro-what">
+        <h2>Intro — What is this? <span class="pill page-source"></span></h2>
         <label class="admin-label">Content</label>
         <div class="quill-editor-container">
-          <div class="quill-editor" data-editor="intro"></div>
+          <div class="quill-editor" data-editor="intro-what"></div>
         </div>
-        <button class="btn save-btn" type="button" data-page-key="intro">Save Intro</button>
+        <button class="btn save-btn" type="button" data-page-key="intro-what">Save</button>
         <span class="admin-status"></span>
       </div>
 
-      <div class="card" data-page-key="details">
-        <h2>Details <span class="pill page-source"></span></h2>
+      <div class="card" data-page-key="intro-next">
+        <h2>Intro — Where to next? <span class="pill page-source"></span></h2>
         <label class="admin-label">Content</label>
         <div class="quill-editor-container">
-          <div class="quill-editor" data-editor="details"></div>
+          <div class="quill-editor" data-editor="intro-next"></div>
         </div>
-        <button class="btn save-btn" type="button" data-page-key="details">Save Details</button>
+        <button class="btn save-btn" type="button" data-page-key="intro-next">Save</button>
         <span class="admin-status"></span>
       </div>
 
-      <div class="card" data-page-key="contact">
-        <h2>Contact <span class="pill page-source"></span></h2>
+      <div class="card" data-page-key="details-copilot">
+        <h2>Details — Built with GitHub Copilot <span class="pill page-source"></span></h2>
         <label class="admin-label">Content</label>
         <div class="quill-editor-container">
-          <div class="quill-editor" data-editor="contact"></div>
+          <div class="quill-editor" data-editor="details-copilot"></div>
         </div>
-        <button class="btn save-btn" type="button" data-page-key="contact">Save Contact</button>
+        <button class="btn save-btn" type="button" data-page-key="details-copilot">Save</button>
+        <span class="admin-status"></span>
+      </div>
+
+      <div class="card" data-page-key="details-infra">
+        <h2>Details — The infrastructure <span class="pill page-source"></span></h2>
+        <label class="admin-label">Content</label>
+        <div class="quill-editor-container">
+          <div class="quill-editor" data-editor="details-infra"></div>
+        </div>
+        <button class="btn save-btn" type="button" data-page-key="details-infra">Save</button>
+        <span class="admin-status"></span>
+      </div>
+
+      <div class="card" data-page-key="details-pipeline">
+        <h2>Details — The deployment pipeline <span class="pill page-source"></span></h2>
+        <label class="admin-label">Content</label>
+        <div class="quill-editor-container">
+          <div class="quill-editor" data-editor="details-pipeline"></div>
+        </div>
+        <button class="btn save-btn" type="button" data-page-key="details-pipeline">Save</button>
+        <span class="admin-status"></span>
+      </div>
+
+      <div class="card" data-page-key="contact-github">
+        <h2>Contact — Find me on GitHub <span class="pill page-source"></span></h2>
+        <label class="admin-label">Content</label>
+        <div class="quill-editor-container">
+          <div class="quill-editor" data-editor="contact-github"></div>
+        </div>
+        <button class="btn save-btn" type="button" data-page-key="contact-github">Save</button>
         <span class="admin-status"></span>
       </div>
     </div>

@@ -36,9 +36,19 @@ The Intro/Details/Contact page bodies live in a `PageContent` table
 (`PageKey`, `Title`, `BodyHtml`, `UpdatedAt`) in an Azure SQL Database
 provisioned by the companion
 [`glued2/nr-vse-azure-lab`](https://github.com/glued2/nr-vse-azure-lab) infra
-repo. Each static HTML file still provides the page layout/nav/styling, with
-the editable region wrapped in `<!-- CONTENT:<key>:start/end -->` markers;
-`server.js` swaps in the current database content on each request.
+repo. Each static HTML file still provides the hero and per-card chrome
+(layout/nav/styling), with only the editable *inner* content of each
+`<div class="card">` — its heading, paragraphs, lists, links — wrapped in
+`<!-- CONTENT:<key>:start/end -->` markers; `server.js` swaps in the current
+database content on each request. Content is split **per card**, one
+`PageKey` row per editable section (e.g. `intro-what`, `intro-next`,
+`details-copilot`, `details-infra`, `details-pipeline`, `contact-github`)
+rather than one row per whole page — this is deliberate: the admin editor
+uses a Quill rich-text (WYSIWYG) editor, which can only produce/preserve
+generic semantic HTML (headings, paragraphs, links, lists), not this site's
+custom `.hero`/`.card`/`.btn`/`.pill` structure. Keeping that structural
+chrome out of the DB-backed/editable region means an admin edit can never
+strip or break the page's visual layout.
 
 - **Authentication is managed-identity only** — there is no SQL username or
   password anywhere. `db.js` uses `@azure/identity`'s `DefaultAzureCredential`
@@ -49,7 +59,9 @@ the editable region wrapped in `<!-- CONTENT:<key>:start/end -->` markers;
 - **Schema/seed is idempotent** — on every startup, the server ensures the
   `PageContent` table exists (`IF NOT EXISTS`) and seeds it from the static
   templates' current content, but only inserts a row `IF NOT EXISTS` for that
-  `PageKey` — it never overwrites content that's already been edited.
+  `PageKey` — it never overwrites content that's already been edited. It also
+  prunes any leftover legacy whole-page rows (`intro`/`details`/`contact`,
+  from before content was split per card section).
 - **Graceful fallback everywhere** — if Azure SQL isn't configured (no
   `AZURE_SQL_SERVER_FQDN`/`AZURE_SQL_DATABASE_NAME`) or isn't reachable (local
   dev, or a transient outage), every route falls back to the static content
@@ -57,7 +69,8 @@ the editable region wrapped in `<!-- CONTENT:<key>:start/end -->` markers;
 
 ## Content admin
 
-`/admin` is a password-gated editor for the three pages' HTML content.
+`/admin` is a password-gated editor for each page's editable card sections
+(six in total: two on Intro, three on Details, one on Contact).
 
 - Not advertised in the site's main nav — reachable only by URL + password.
 - Login posts to `/admin/login`, checked against the `ADMIN_PASSWORD`
@@ -65,10 +78,14 @@ the editable region wrapped in `<!-- CONTENT:<key>:start/end -->` markers;
   set, admin editing is disabled entirely** — there is no default/fallback
   password.
 - A signed, HTTP-only session cookie (via `express-session`) keeps you logged
-  in across the three edit forms; `/admin/logout` clears it.
-- Each page has a plain `<textarea>` of raw HTML, pre-filled from the
-  database (or the static fallback if the DB is unavailable), with its own
-  Save button that `POST`s to `/admin/content/:pageKey`.
+  in across all the edit forms; `/admin/logout` clears it.
+- Each section has a [Quill](https://quilljs.com) rich-text (WYSIWYG) editor,
+  pre-filled from the database (or the static fallback if the DB is
+  unavailable), with its own Save button that `POST`s the rendered HTML
+  (`quill.root.innerHTML`) to `/admin/content/:pageKey`. Quill's JS/CSS are
+  bundled via the `quill` npm package (pinned to `1.3.7`, the last release
+  with a prebuilt `dist/` bundle suited to a plain `<script>` tag) and served
+  locally from `node_modules` — no CDN.
 - All `/admin/*` write routes require the auth cookie (401 otherwise) and
   return a graceful error (503) if Azure SQL can't be reached rather than
   crashing.

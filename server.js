@@ -31,18 +31,41 @@ if (!ADMIN_ENABLED) {
   );
 }
 
-// The three DB-backed pages: `key` matches the CONTENT marker + PageContent
-// row, `file` is the static template that provides layout + fallback
-// content, `title` is a friendly label shown in the admin editor only.
-const PAGES = [
-  { key: "intro", file: "index.html", title: "Intro" },
-  { key: "details", file: "details.html", title: "Details" },
-  { key: "contact", file: "contact.html", title: "Contact" },
+// The DB-backed content sections: `key` matches the CONTENT marker + a
+// PageContent row, `file` is the static template that provides the page
+// layout/hero/card chrome + fallback content, `title` is a friendly label
+// shown in the admin editor only. Each section corresponds to one editable
+// card's inner content (heading, paragraphs, lists, links) — the surrounding
+// hero and `<div class="card">` chrome stays static in the template so a
+// rich-text (Quill) edit can never strip/break the page's visual structure.
+const SECTIONS = [
+  { key: "intro-what", file: "index.html", title: "Intro — What is this?" },
+  { key: "intro-next", file: "index.html", title: "Intro — Where to next?" },
+  { key: "details-copilot", file: "details.html", title: "Details — Built with GitHub Copilot" },
+  { key: "details-infra", file: "details.html", title: "Details — The infrastructure" },
+  { key: "details-pipeline", file: "details.html", title: "Details — The deployment pipeline" },
+  { key: "contact-github", file: "contact.html", title: "Contact — Find me on GitHub" },
 ];
+
+// Legacy PageKey values from before content was split per-card (one row per
+// whole page, including the hero and every card in a single HTML blob). No
+// longer read anywhere; pruned from the database on startup so a stale/
+// accidentally-mangled row (e.g. one that got flattened by an earlier Quill
+// save) doesn't linger unused. Safe/idempotent — a no-op once already pruned.
+const LEGACY_KEYS = ["intro", "details", "contact"];
 
 function readTemplate(file) {
   return fs.readFileSync(path.join(PUBLIC_DIR, file), "utf8");
 }
+
+// Groups SECTIONS by their template file, e.g. { "index.html": [intro-what,
+// intro-next], "details.html": [details-copilot, ...], ... } so a page
+// render only needs one DB round-trip regardless of how many editable
+// sections it contains.
+const SECTIONS_BY_FILE = SECTIONS.reduce((acc, section) => {
+  (acc[section.file] = acc[section.file] || []).push(section);
+  return acc;
+}, {});
 
 function markerTags(key) {
   return {
@@ -72,29 +95,35 @@ function replaceMarkerContent(html, key, newInner) {
   return `${before}\n${newInner}\n${after}`;
 }
 
-// Renders a DB-backed page: read the static template (layout + fallback
-// content), try to swap in the current database content, and always fall
-// back gracefully to the static content on any DB error.
-async function renderPage(res, page) {
-  const template = readTemplate(page.file);
+// Renders a DB-backed page: read the static template (hero/card chrome +
+// per-section fallback content), try to swap in each section's current
+// database content, and always fall back gracefully to the static content
+// (per-section) on any DB error.
+async function renderPage(res, file) {
+  const template = readTemplate(file);
   let html = template;
-  try {
-    const content = await db.getPageContent(page.key);
-    if (content && content.bodyHtml) {
-      html = replaceMarkerContent(template, page.key, content.bodyHtml);
+  const sections = SECTIONS_BY_FILE[file] || [];
+  if (sections.length > 0) {
+    try {
+      const allContent = await db.getAllPageContent();
+      for (const section of sections) {
+        const entry = allContent[section.key];
+        if (entry && entry.bodyHtml) {
+          html = replaceMarkerContent(html, section.key, entry.bodyHtml);
+        }
+      }
+    } catch (err) {
+      console.warn(`[db] Using static fallback content for "${file}": ${err.message}`);
     }
-  } catch (err) {
-    console.warn(
-      `[db] Using static fallback content for "${page.key}": ${err.message}`
-    );
   }
   res.set("Content-Type", "text/html; charset=utf-8").send(html);
 }
 
 // Ensures the PageContent table exists and is seeded with the content
-// currently baked into the static templates. Runs once at startup, is fully
-// idempotent (never overwrites existing rows), and never crashes the server
-// if Azure SQL isn't configured or reachable.
+// currently baked into the static templates (one row per editable card
+// section). Runs once at startup, is fully idempotent (never overwrites
+// existing rows), and never crashes the server if Azure SQL isn't configured
+// or reachable. Also prunes any leftover legacy whole-page rows.
 async function seedDatabase() {
   if (!db.isConfigured) {
     console.log(
@@ -103,15 +132,17 @@ async function seedDatabase() {
     return;
   }
   try {
-    const seedRows = PAGES.map((page) => {
-      const template = readTemplate(page.file);
+    const templateCache = {};
+    const seedRows = SECTIONS.map((section) => {
+      const template = templateCache[section.file] || (templateCache[section.file] = readTemplate(section.file));
       return {
-        pageKey: page.key,
-        title: page.title,
-        bodyHtml: extractMarkerContent(template, page.key) || "",
+        pageKey: section.key,
+        title: section.title,
+        bodyHtml: extractMarkerContent(template, section.key) || "",
       };
     });
     await db.ensureSchemaAndSeed(seedRows);
+    await db.pruneLegacyKeys(LEGACY_KEYS);
     console.log("[db] Schema ensured and seed content applied (idempotent).");
   } catch (err) {
     console.warn(`[db] Failed to ensure schema/seed: ${err.message}`);
@@ -147,9 +178,9 @@ app.use(
   })
 );
 
-app.get("/", (req, res) => renderPage(res, PAGES[0]));
-app.get("/details", (req, res) => renderPage(res, PAGES[1]));
-app.get("/contact", (req, res) => renderPage(res, PAGES[2]));
+app.get("/", (req, res) => renderPage(res, "index.html"));
+app.get("/details", (req, res) => renderPage(res, "details.html"));
+app.get("/contact", (req, res) => renderPage(res, "contact.html"));
 
 // The old direct-file nav links predate DB-backed rendering; redirect them
 // to their dynamic equivalents so DB edits are always reflected regardless
@@ -223,20 +254,20 @@ app.get("/admin/content", requireAdmin, async (req, res) => {
   }
 
   const pages = {};
-  for (const page of PAGES) {
-    const dbEntry = dbContentByKey[page.key];
+  for (const section of SECTIONS) {
+    const dbEntry = dbContentByKey[section.key];
     if (dbEntry) {
-      pages[page.key] = {
+      pages[section.key] = {
         title: dbEntry.title,
         bodyHtml: dbEntry.bodyHtml,
         updatedAt: dbEntry.updatedAt,
         source: "database",
       };
     } else {
-      const template = readTemplate(page.file);
-      pages[page.key] = {
-        title: page.title,
-        bodyHtml: extractMarkerContent(template, page.key) || "",
+      const template = readTemplate(section.file);
+      pages[section.key] = {
+        title: section.title,
+        bodyHtml: extractMarkerContent(template, section.key) || "",
         updatedAt: null,
         source: "static-fallback",
       };
@@ -247,8 +278,8 @@ app.get("/admin/content", requireAdmin, async (req, res) => {
 });
 
 app.post("/admin/content/:pageKey", requireAdmin, async (req, res) => {
-  const page = PAGES.find((p) => p.key === req.params.pageKey);
-  if (!page) {
+  const section = SECTIONS.find((s) => s.key === req.params.pageKey);
+  if (!section) {
     return res.status(404).json({ error: "Unknown page key." });
   }
 
@@ -257,13 +288,13 @@ app.post("/admin/content/:pageKey", requireAdmin, async (req, res) => {
     return res.status(400).json({ error: "bodyHtml is required." });
   }
 
-  const effectiveTitle = typeof title === "string" && title.trim() ? title.trim() : page.title;
+  const effectiveTitle = typeof title === "string" && title.trim() ? title.trim() : section.title;
 
   try {
-    await db.setPageContent(page.key, effectiveTitle, bodyHtml);
+    await db.setPageContent(section.key, effectiveTitle, bodyHtml);
     res.json({ ok: true });
   } catch (err) {
-    console.error(`[db] Failed to save content for "${page.key}": ${err.message}`);
+    console.error(`[db] Failed to save content for "${section.key}": ${err.message}`);
     res
       .status(503)
       .json({ error: "Azure SQL is unavailable — changes were not saved." });

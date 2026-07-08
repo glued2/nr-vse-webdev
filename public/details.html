@@ -21,7 +21,6 @@
   </nav>
 
   <main>
-    <!-- CONTENT:details:start -->
     <section class="hero">
       <h1>How the sausage gets made 🌭</h1>
       <p class="subtitle">
@@ -30,6 +29,7 @@
     </section>
 
     <div class="card">
+      <!-- CONTENT:details-copilot:start -->
       <h2>Built with GitHub Copilot</h2>
       <p>
         This site — pages, styling, tiny Express server, and the whole deployment
@@ -37,9 +37,11 @@
         Yes, even this sentence. Copilot helped scaffold the HTML/CSS/JS, wire up the
         Node server, and author the GitHub Actions workflow that ships it to Azure.
       </p>
+      <!-- CONTENT:details-copilot:end -->
     </div>
 
     <div class="card">
+      <!-- CONTENT:details-infra:start -->
       <h2>The infrastructure</h2>
       <p>
         The app runs on a deliberately cheap and cheerful setup: a
@@ -53,9 +55,11 @@
         <li>Infra-as-code: Bicep templates in a sibling repo</li>
         <li>App code: this repo — plain static files behind a minimal Express server</li>
       </ul>
+      <!-- CONTENT:details-infra:end -->
     </div>
 
     <div class="card">
+      <!-- CONTENT:details-pipeline:start -->
       <h2>The deployment pipeline</h2>
       <p>
         Every push to <span class="pill">main</span> triggers a
@@ -73,8 +77,8 @@
         The app name itself is never hardcoded — it's injected via a repository
         variable, since Bicep gives the real App Service a unique, generated suffix.
       </p>
+      <!-- CONTENT:details-pipeline:end -->
     </div>
-    <!-- CONTENT:details:end -->
   </main>
 
   <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
