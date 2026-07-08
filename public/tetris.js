@@ -16,6 +16,7 @@
   const levelEl = document.getElementById("tetris-level");
   const messageEl = document.getElementById("tetris-message");
   const restartBtn = document.getElementById("tetris-restart");
+  const pauseBtn = document.getElementById("tetris-pause");
 
   // Palette drawn from the site's own color scheme (cyan/magenta accents plus
   // a few complementary purples/teals/blues so pieces are easy to tell apart
@@ -206,6 +207,10 @@
     if (gameOver) return;
     paused = !paused;
     messageEl.textContent = paused ? "Paused" : "";
+    if (pauseBtn) {
+      pauseBtn.textContent = paused ? "Resume" : "Pause";
+      pauseBtn.classList.toggle("is-paused", paused);
+    }
     if (!paused) {
       lastTime = performance.now();
     }
@@ -294,6 +299,10 @@
     gameOver = false;
     paused = false;
     messageEl.textContent = "";
+    if (pauseBtn) {
+      pauseBtn.textContent = "Pause";
+      pauseBtn.classList.remove("is-paused");
+    }
     next = randomPieceName();
     spawnNext();
     updateStats();
@@ -326,12 +335,19 @@
         e.preventDefault();
         togglePause();
         break;
+      case "Escape":
+        e.preventDefault();
+        togglePause();
+        break;
       default:
         break;
     }
   });
 
   restartBtn.addEventListener("click", restart);
+  if (pauseBtn) {
+    pauseBtn.addEventListener("click", togglePause);
+  }
 
   restart();
   rafId = requestAnimationFrame(tick);

@@ -3,7 +3,7 @@
    ================================ */
 
 .jump-card {
-  max-width: 720px;
+  max-width: 1040px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -25,9 +25,9 @@
 #jump-canvas {
   display: block;
   width: 100%;
-  max-width: 600px;
+  max-width: 900px;
   height: auto;
-  aspect-ratio: 600 / 220;
+  aspect-ratio: 900 / 330;
   background: var(--bg-1);
   border: 1px solid var(--card-border);
   border-radius: 12px;
