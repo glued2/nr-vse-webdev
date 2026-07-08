@@ -1,0 +1,122 @@
+/* ================================
+   tetris.css — styles for the Play/Tetris page
+   ================================ */
+
+.tetris-card {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tetris-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.tetris-board-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+}
+
+#tetris-canvas {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+  aspect-ratio: 1 / 2;
+  background: var(--bg-1);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.tetris-side {
+  flex: 1 1 200px;
+  min-width: 180px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.tetris-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 0.4rem;
+}
+
+.tetris-stat-label {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tetris-stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tetris-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+#tetris-next-canvas {
+  background: var(--bg-1);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  width: 96px;
+  height: 96px;
+  align-self: flex-start;
+}
+
+.tetris-btn {
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.6rem 1.4rem;
+}
+
+.tetris-message {
+  min-height: 1.4em;
+  color: var(--accent-2);
+  font-weight: 600;
+  margin: 0;
+}
+
+.tetris-controls h2 {
+  font-size: 1rem;
+  margin: 0.5rem 0 0.4rem;
+  color: var(--accent);
+}
+
+.tetris-controls ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .tetris-layout {
+    flex-direction: column;
+    align-items: center;
+  }
+  .tetris-side {
+    max-width: 240px;
+    width: 100%;
+  }
+}

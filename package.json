@@ -1,5 +1,5 @@
 {
-  "name": "ns-vse-webdev",
+  "name": "nr-vse-webdev",
   "version": "1.0.0",
   "private": true,
   "description": "Jazzy 3-page static demo site served by a minimal Express server, deployed to Azure App Service.",

@@ -20,6 +20,10 @@ app.get("/contact", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "contact.html"));
 });
 
+app.get("/play", (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "play.html"));
+});
+
 app.listen(PORT, () => {
-  console.log(`ns-vse-webdev listening on port ${PORT}`);
+  console.log(`nr-vse-webdev listening on port ${PORT}`);
 });
