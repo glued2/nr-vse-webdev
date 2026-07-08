@@ -51,7 +51,9 @@ jobs:
               --settings \
                 AZURE_SQL_SERVER_FQDN="${{ vars.AZURE_SQL_SERVER_FQDN }}" \
                 AZURE_SQL_DATABASE_NAME="${{ vars.AZURE_SQL_DATABASE_NAME }}" \
-                ADMIN_PASSWORD="${{ secrets.ADMIN_PASSWORD }}"
+                ENTRA_CLIENT_ID="${{ vars.ENTRA_CLIENT_ID }}" \
+                ENTRA_TENANT_ID="${{ vars.ENTRA_TENANT_ID }}" \
+                AZURE_ADMIN_UAMI_CLIENT_ID="${{ vars.AZURE_ADMIN_UAMI_CLIENT_ID }}"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3

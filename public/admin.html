@@ -26,26 +26,25 @@
     <div id="admin-disabled" class="card" hidden>
       <h2>Admin editing is disabled</h2>
       <p>
-        <code>ADMIN_PASSWORD</code> is not configured on this server, so the
-        content editor is unavailable. Set the <code>ADMIN_PASSWORD</code>
-        environment variable (App Service application setting) to enable it.
+        Microsoft Entra sign-in is not configured on this server — the
+        <code>ENTRA_CLIENT_ID</code>, <code>ENTRA_TENANT_ID</code>, and
+        <code>AZURE_ADMIN_UAMI_CLIENT_ID</code> environment variables (App
+        Service application settings) must all be set to enable the content
+        editor.
       </p>
     </div>
 
     <div id="login-panel" class="card" hidden>
       <h2>Log in</h2>
-      <form id="login-form">
-        <label class="admin-label" for="password">Password</label>
-        <input class="admin-input" type="password" id="password" name="password" autocomplete="current-password" required />
-        <button class="btn" type="submit">Log in</button>
-      </form>
+      <p>Sign in with your Microsoft account to edit page content.</p>
       <p id="login-error" class="admin-error" hidden></p>
+      <a class="btn" id="login-link" href="/auth/login">Sign in with Microsoft</a>
     </div>
 
     <div id="editor-panel" hidden>
       <div class="card admin-toolbar">
-        <p>Logged in as admin.</p>
-        <button class="btn admin-btn-secondary" id="logout-btn" type="button">Log out</button>
+        <p>Signed in as <strong id="admin-username"></strong>.</p>
+        <a class="btn admin-btn-secondary" id="logout-link" href="/auth/logout">Log out</a>
       </div>
 
       <div class="card" data-page-key="intro-what">

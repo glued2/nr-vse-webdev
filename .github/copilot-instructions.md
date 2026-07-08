@@ -6,7 +6,7 @@ A jazzy little 3-page demo site (Intro / Details / Contact), served by a
 minimal Express app and deployed to Azure App Service. No build step, no
 bundler, no frontend framework — static HTML/CSS/JS templates behind a thin
 Express server, with page body content stored in an Azure SQL Database and
-editable via a password-gated `/admin` page.
+editable via a Microsoft Entra ID-gated `/admin` page.
 
 ## Structure
 
@@ -25,9 +25,10 @@ editable via a password-gated `/admin` page.
   `public/styles.css` and `public/app.js` provide shared nav/styling
   (gradient background, glassy cards, nav bar, active-link highlighting,
   mobile nav toggle) across all pages.
-- `public/admin.html` / `public/admin.css` / `public/admin.js` — password-gated
-  content editor, one Quill editor card per editable section. Not linked from
-  the main nav; reachable only at `/admin`. Vanilla JS talking to the JSON
+- `public/admin.html` / `public/admin.css` / `public/admin.js` — Microsoft
+  Entra ID-gated content editor, one Quill editor card per editable section.
+  Linked from the main nav ("Admin") since access is enforced entirely by
+  Entra ID, not by keeping the URL secret. Vanilla JS talking to the JSON
   API on `/admin/*` in `server.js`; Quill's JS/CSS are bundled via the
   `quill` npm package (pinned to `1.3.7`, the last release with a prebuilt
   `dist/` bundle) and served from `node_modules` via a `/vendor/quill`
@@ -36,12 +37,16 @@ editable via a password-gated `/admin` page.
   `public/`, plus explicit `GET /`, `/details`, `/contact` routes that render
   DB-backed content into the static templates, `301` redirects from the old
   `/index.html`/`/details.html`/`/contact.html` paths, `/play` and `/jump`
-  routes, and the `/admin` page + JSON API (login/logout/status/content).
+  routes, the `/auth/login`, `/auth/callback`, `/auth/logout` Entra sign-in
+  routes, and the `/admin` page + JSON API (status/content).
 - `db.js` — Azure SQL access (see below). Exposes `isConfigured`,
   `ensureSchemaAndSeed`, `getPageContent`, `getAllPageContent`,
   `setPageContent`, `pruneLegacyKeys`.
+- `auth.js` — Microsoft Entra ID sign-in (see below). Exposes `isConfigured`,
+  `getAuthCodeUrl`, `acquireTokenByCode`, `logoutUrl`.
 - `package.json` — dependencies: `express`, `mssql`, `@azure/identity`,
-  `express-session`, `quill`. One script: `npm start` (`node server.js`).
+  `@azure/msal-node`, `express-session`, `quill`. One script: `npm start`
+  (`node server.js`).
 
 ## Database-backed content & admin page
 
@@ -68,13 +73,51 @@ editable via a password-gated `/admin` page.
   fails, every route/handler catches the error and falls back to the static
   content baked into the HTML file — the server must never crash or error out
   because SQL is unreachable.
-- `/admin` is gated by the `ADMIN_PASSWORD` env var (constant-time compare,
-  `express-session` cookie). **If `ADMIN_PASSWORD` is unset, admin editing is
-  disabled entirely** — never fall back to a default/hardcoded password.
-  Each section is edited via a Quill rich-text editor (not a raw-HTML
-  textarea) — Quill only preserves generic semantic HTML, which is exactly
-  why the surrounding `.hero`/`.card` chrome must stay outside the
-  `CONTENT:<key>` markers.
+- `/admin` is gated by Microsoft Entra ID sign-in (OAuth2/OIDC authorization
+  code flow via `@azure/msal-node`), not a password. See "Entra ID admin
+  sign-in" below for the full mechanism. Each section is edited via a Quill
+  rich-text editor (not a raw-HTML textarea) — Quill only preserves generic
+  semantic HTML, which is exactly why the surrounding `.hero`/`.card` chrome
+  must stay outside the `CONTENT:<key>` markers.
+
+## Entra ID admin sign-in
+
+- `/admin` authentication uses the standard OAuth2/OIDC **authorization code
+  flow**: `GET /auth/login` redirects to Microsoft's authorize endpoint,
+  `GET /auth/callback` exchanges the returned code for tokens and stores a
+  minimal identity (`name`, `username`, `oid`) in `req.session.user`,
+  `GET /auth/logout` destroys the session and redirects to Entra's own
+  logout endpoint for a full sign-out.
+- **Zero client secret — ever.** The Entra App Registration's credential is a
+  federated trust to a **User-Assigned Managed Identity** (workload identity
+  federation), not a stored secret. `auth.js` fetches a short-lived managed
+  identity token (via `@azure/identity`'s `ManagedIdentityCredential`,
+  configured with the UAMI's client ID) for the fixed audience
+  `api://AzureADTokenExchange/.default`, and passes it to
+  `@azure/msal-node`'s `ConfidentialClientApplication` as an async
+  `clientAssertion` callback (not a static string) — MSAL invokes the
+  callback itself, fresh, every time it needs a signed assertion. This
+  mirrors `db.js`'s "no password anywhere" pattern for a different Azure AD
+  credential type.
+- **No allow-list/role check in app code.** The Entra Enterprise Application
+  has "Assignment required = Yes"; who may sign in is decided entirely by
+  Entra ID (an unassigned user is rejected with `AADSTS50105` before
+  `/auth/callback` ever runs). `requireAdmin` and `/admin/status` only check
+  whether `req.session.user` is set.
+- Configured via three env vars, all required for `auth.isConfigured` to be
+  true (if any is missing, admin editing is disabled entirely, same
+  fail-closed philosophy as the old `ADMIN_PASSWORD` check):
+  `ENTRA_CLIENT_ID` (App Registration client ID), `ENTRA_TENANT_ID` (tenant
+  ID), `AZURE_ADMIN_UAMI_CLIENT_ID` (the federated UAMI's client ID).
+- The redirect URI is derived per-request
+  (`${req.protocol}://${req.get("host")}/auth/callback`) rather than stored
+  as its own env var, since the App Registration's registered redirect URI
+  already matches the App Service's real (Bicep-generated) hostname.
+- Building the `/auth/login` redirect URL does **not** require real Azure
+  connectivity (MSAL only invokes the `clientAssertion` callback when
+  actually exchanging a code, not when building the authorize URL) — this is
+  what makes it possible to verify the redirect shape locally without a real
+  managed identity.
 
 ## Conventions
 
@@ -92,9 +135,12 @@ editable via a password-gated `/admin` page.
 - **Never hardcode the Azure App Service name** anywhere in code or workflows
   — it's generated by Bicep with a `uniqueString` suffix and must only be
   referenced via the `AZURE_WEBAPP_NAME` GitHub Actions repository variable.
-- Similarly, never hardcode the Azure SQL server FQDN, database name, or the
-  admin password — always read `AZURE_SQL_SERVER_FQDN`,
-  `AZURE_SQL_DATABASE_NAME`, and `ADMIN_PASSWORD` from environment variables.
+- Similarly, never hardcode the Azure SQL server FQDN, database name, Entra
+  client/tenant IDs, or the admin managed identity client ID — always read
+  `AZURE_SQL_SERVER_FQDN`, `AZURE_SQL_DATABASE_NAME`, `ENTRA_CLIENT_ID`,
+  `ENTRA_TENANT_ID`, and `AZURE_ADMIN_UAMI_CLIENT_ID` from environment
+  variables. There is no admin password to hardcode — Entra ID sign-in
+  replaced it entirely.
 
 ## Deployment target
 
@@ -123,13 +169,16 @@ Required repo config:
 
 - Secrets `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` —
   shared with the `nr-vse-azure-lab` App Registration.
-- Secret `ADMIN_PASSWORD` — password for the `/admin` content editor. Pushed
-  into the App Service's application settings on every deploy via
-  `az webapp config appsettings set`.
 - Variable `AZURE_WEBAPP_NAME` — set to the Bicep-generated App Service name.
 - Variables `AZURE_SQL_SERVER_FQDN` / `AZURE_SQL_DATABASE_NAME` — the Azure
   SQL logical server FQDN and database name from the `nr-vse-azure-lab` Bicep
   deployment. Also pushed into App Service application settings on deploy.
+- Variables `ENTRA_CLIENT_ID` / `ENTRA_TENANT_ID` /
+  `AZURE_ADMIN_UAMI_CLIENT_ID` — the Entra App Registration's client ID and
+  tenant, and the federated User-Assigned Managed Identity's client ID (the
+  last one comes from the `nr-vse-azure-lab` Bicep deployment). Ordinary repo
+  variables, not secrets — there's no client secret in this flow to protect.
+  Also pushed into App Service application settings on deploy.
 
 ## Cross-repo relationship
 
