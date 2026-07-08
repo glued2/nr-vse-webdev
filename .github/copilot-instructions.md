@@ -24,11 +24,20 @@ editable via a Microsoft Entra ID-gated `/admin` page.
   edit can never break the page's visual structure.
   `public/styles.css` and `public/app.js` provide shared nav/styling
   (gradient background, glassy cards, nav bar, active-link highlighting,
-  mobile nav toggle) across all pages.
+  mobile nav toggle) across all pages. The nav is identical everywhere —
+  Intro / Details / Contact / Play: Blocks / Play: Jump / Admin, in that
+  order, "Admin" always last — including on `/admin` itself.
+- `public/play.html`, `public/jump.html` — two small standalone browser
+  games ("Play: Blocks" / "Play: Jump" in the nav), served via the `/play`
+  and `/jump` routes in `server.js`. Static, not DB-backed.
 - `public/admin.html` / `public/admin.css` / `public/admin.js` — Microsoft
   Entra ID-gated content editor, one Quill editor card per editable section.
   Linked from the main nav ("Admin") since access is enforced entirely by
-  Entra ID, not by keeping the URL secret. Vanilla JS talking to the JSON
+  Entra ID, not by keeping the URL secret. Renders the same full site nav as
+  every other page; the "Admin" nav item itself is dynamic — `admin.js`
+  swaps it for a "Signed in as {name} · Sign out" indicator (linking to
+  `/auth/logout`) once `/admin/status` reports `loggedIn: true`, and back to
+  a plain "Admin" link when signed out. Vanilla JS talking to the JSON
   API on `/admin/*` in `server.js`; Quill's JS/CSS are bundled via the
   `quill` npm package (pinned to `1.3.7`, the last release with a prebuilt
   `dist/` bundle) and served from `node_modules` via a `/vendor/quill`

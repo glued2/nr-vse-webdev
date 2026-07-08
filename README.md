@@ -14,13 +14,23 @@ Entra ID-gated `/admin` page.
   how the Azure infrastructure and pipeline fit together.
 - **`public/contact.html`** — Contact page. Links back to the repo owner,
   [github.com/glued2](https://github.com/glued2).
+- **`public/play.html`** / **`public/jump.html`** — Two small standalone
+  browser games ("Play: Blocks" and "Play: Jump" in the nav), served via the
+  `/play` and `/jump` routes in `server.js`. Static, not DB-backed.
 - **`public/styles.css`** / **`public/app.js`** — Shared styling (animated
   gradient background, glassy cards, gradient nav bar) and a small script for
-  active-link highlighting, fade-in on load, and the mobile nav toggle.
+  active-link highlighting, fade-in on load, and the mobile nav toggle. The
+  nav bar (Intro / Details / Contact / Play: Blocks / Play: Jump / Admin) is
+  identical across every page, including `/admin`, so `app.js`'s active-link
+  highlighting and mobile toggle work everywhere without extra code.
 - **`public/admin.html`** / **`public/admin.css`** / **`public/admin.js`** —
   Microsoft Entra ID-gated content editor (see [Content admin](#content-admin)
   below). Linked from the main nav (as "Admin") but not privileged to view —
-  only to sign in; actual access is enforced entirely by Entra ID.
+  only to sign in; actual access is enforced entirely by Entra ID. `/admin`
+  shows the same full site nav as every other page; once signed in, the
+  "Admin" nav item itself swaps to a "Signed in as {name} · Sign out"
+  indicator (driven by the existing `/admin/status` poll, no separate
+  endpoint) that links to `/auth/logout`.
 - **`server.js`** — Express server. Serves `/`, `/details`, `/contact`
   dynamically (page layout comes from the static HTML templates, the editable
   body content comes from Azure SQL — see [Database-backed
@@ -115,6 +125,12 @@ sections (six in total: two on Intro, three on Details, one on Contact).
 - All `/admin/*` write routes require an authenticated session (401
   otherwise) and return a graceful error (503) if Azure SQL can't be reached
   rather than crashing.
+- `/admin` renders the exact same nav bar as every other page (Intro /
+  Details / Contact / Play: Blocks / Play: Jump / Admin). Its own "Admin" nav
+  item is dynamic: signed out (or Entra not configured), it's a plain link to
+  `/admin`; signed in, `admin.js` swaps it for "Signed in as **{name}** · Sign
+  out" (linking to `/auth/logout`), driven by the same `/admin/status` check
+  the page already performs on load — no extra endpoint.
 
 ## Running locally
 
