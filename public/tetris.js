@@ -93,6 +93,20 @@
   let gameOver = false;
   let rafId = null;
 
+  // Fire-and-forget usage telemetry (see analytics.js / server.js's
+  // /api/game-event) — purely aggregate start/end + score counts, no
+  // per-visitor identifier of any kind. Ignores failures entirely so a
+  // slow/unavailable/disabled analytics backend can never affect gameplay.
+  function reportGameEvent(event, eventScore) {
+    const body = { game: "blocks", event };
+    if (typeof eventScore === "number") body.score = eventScore;
+    fetch("/api/game-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }
+
   function createEmptyBoard() {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
   }
@@ -146,6 +160,7 @@
     if (collides(current)) {
       gameOver = true;
       messageEl.textContent = "Game over — press Restart to play again.";
+      reportGameEvent("end", score);
     }
   }
 
@@ -303,6 +318,7 @@
       pauseBtn.textContent = "Pause";
       pauseBtn.classList.remove("is-paused");
     }
+    reportGameEvent("start");
     next = randomPieceName();
     spawnNext();
     updateStats();

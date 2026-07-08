@@ -6,7 +6,8 @@ A jazzy little 3-page demo site (Intro / Details / Contact), served by a
 minimal Express app and deployed to Azure App Service. No build step, no
 bundler, no frontend framework — static HTML/CSS/JS templates behind a thin
 Express server, with page body content stored in an Azure SQL Database and
-editable via a Microsoft Entra ID-gated `/admin` page.
+editable via a Microsoft Entra ID-gated `/admin` page, which also surfaces a
+privacy-preserving usage analytics dashboard backed by Azure Table Storage.
 
 ## Structure
 
@@ -29,9 +30,15 @@ editable via a Microsoft Entra ID-gated `/admin` page.
   order, "Admin" always last — including on `/admin` itself.
 - `public/play.html`, `public/jump.html` — two small standalone browser
   games ("Play: Blocks" / "Play: Jump" in the nav), served via the `/play`
-  and `/jump` routes in `server.js`. Static, not DB-backed.
+  and `/jump` routes in `server.js`. Static, not DB-backed. Their game
+  scripts (`public/tetris.js`, `public/jump.js`) fire-and-forget `POST
+  /api/game-event` on game start and game-over (with score) for the usage
+  analytics dashboard — see "Usage analytics" below.
 - `public/admin.html` / `public/admin.css` / `public/admin.js` — Microsoft
-  Entra ID-gated content editor, one Quill editor card per editable section.
+  Entra ID-gated content editor, one Quill editor card per editable section,
+  plus a "Stats" tab showing the usage analytics dashboard (hits-by-page
+  table, CSS-only bar chart for hits-by-day, games table). The two tabs
+  (Content/Stats) are a simple show/hide toggle, no routing library.
   Linked from the main nav ("Admin") since access is enforced entirely by
   Entra ID, not by keeping the URL secret. Renders the same full site nav as
   every other page; the "Admin" nav item itself is dynamic — `admin.js`
@@ -44,18 +51,25 @@ editable via a Microsoft Entra ID-gated `/admin` page.
   static route — no CDN.
 - `server.js` — Express server: `express.static` (with `index:false`) serves
   `public/`, plus explicit `GET /`, `/details`, `/contact` routes that render
-  DB-backed content into the static templates, `301` redirects from the old
+  DB-backed content into the static templates (and fire-and-forget log a
+  page hit for analytics), `301` redirects from the old
   `/index.html`/`/details.html`/`/contact.html` paths, `/play` and `/jump`
-  routes, the `/auth/login`, `/auth/callback`, `/auth/logout` Entra sign-in
-  routes, and the `/admin` page + JSON API (status/content).
+  routes (also logging page hits), the `/auth/login`, `/auth/callback`,
+  `/auth/logout` Entra sign-in routes, `POST /api/game-event` (unauthenticated
+  — any visitor playing a game can post a start/end event), and the `/admin`
+  page + JSON API (status/content/stats).
 - `db.js` — Azure SQL access (see below). Exposes `isConfigured`,
   `ensureSchemaAndSeed`, `getPageContent`, `getAllPageContent`,
   `setPageContent`, `pruneLegacyKeys`.
 - `auth.js` — Microsoft Entra ID sign-in (see below). Exposes `isConfigured`,
   `getAuthCodeUrl`, `acquireTokenByCode`, `logoutUrl`.
+- `analytics.js` — Azure Table Storage access for usage analytics (see
+  "Usage analytics" below). Exposes `isConfigured`, `ensureTables`,
+  `logPageHit` (never throws — fire-and-forget safe), `logGameEvent`,
+  `getStatsSummary`.
 - `package.json` — dependencies: `express`, `mssql`, `@azure/identity`,
-  `@azure/msal-node`, `express-session`, `quill`. One script: `npm start`
-  (`node server.js`).
+  `@azure/msal-node`, `@azure/data-tables`, `express-session`, `quill`. One
+  script: `npm start` (`node server.js`).
 
 ## Database-backed content & admin page
 
@@ -128,6 +142,54 @@ editable via a Microsoft Entra ID-gated `/admin` page.
   what makes it possible to verify the redirect shape locally without a real
   managed identity.
 
+## Usage analytics
+
+- `analytics.js` mirrors `db.js`/`auth.js`'s graceful-degradation pattern:
+  `isConfigured` is true only when `AZURE_STORAGE_ACCOUNT_NAME` is set; all
+  functions catch their own errors rather than let a failure crash a request.
+  Uses `@azure/data-tables`'s `TableClient` with `@azure/identity`'s
+  `DefaultAzureCredential` against
+  `https://{AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net` — no
+  connection string or storage account key anywhere, same "no secrets"
+  philosophy as SQL and Entra sign-in.
+- **Privacy by design — this is a hard constraint, not a nice-to-have.** No
+  cookies, no persistent visitor identifier of any kind, no IP address
+  storage. Only aggregate data is logged: hit counts, request paths,
+  referrers sanitized to origin+path only (`sanitizeReferrer()` strips query
+  strings/fragments, which can carry sensitive tokens), and a coarse browser
+  family (`parseBrowserFamily()` — `Chrome`/`Firefox`/`Safari`/`Edge`/`Other`,
+  never the raw User-Agent string). This avoids triggering UK/EU
+  PECR/GDPR cookie-consent requirements. Do not add any field that could
+  re-identify or track an individual visitor across requests.
+- Two Table Storage tables, both partitioned by UTC date (`yyyy-MM-dd`,
+  `PartitionKey`) so "last N days" queries are simple OData range filters:
+  - `PageHits` — `Path`, `Referrer`, `BrowserFamily`. Written by
+    `analytics.logPageHit()`, called fire-and-forget from the `/`,
+    `/details`, `/contact`, `/play`, `/jump` route handlers only (not static
+    assets, not `/admin/*`, not `/auth/*`, not `/api/game-event` itself).
+  - `GameEvents` — `Game` (`blocks`/`jump`), `Event` (`start`/`end`), `Score`
+    (present only on `end`). Written by `analytics.logGameEvent()` via
+    `POST /api/game-event`, called from `public/tetris.js`'s `restart()`/
+    `spawnNext()` and `public/jump.js`'s `start()`/`endGame()`.
+  - `createTable()` throws 409 if a table already exists — `ensureTables()`
+    catches and ignores that specific error (Table Storage has no native
+    "create if not exists"), rethrowing anything else. This is the Table
+    Storage equivalent of `db.js`'s `IF NOT EXISTS` idempotency.
+- **Error-handling is deliberately split**: `logPageHit()` never throws
+  (fire-and-forget, no caller awaits it — an unhandled rejection here could
+  crash the process) but `logGameEvent()`/`getStatsSummary()` do throw, since
+  their callers (`POST /api/game-event`, `GET /admin/stats`) `await` +
+  `try/catch` and translate failures into a `503`.
+- `GET /admin/stats` is gated by the same `requireAdmin` middleware as the
+  content editor; it returns `{configured: false}` if analytics isn't set up,
+  or aggregates the last 30 days into `{ totalHits, hitsByPage, hitsByDay
+  (14-day array), games: { blocks, jump } }`.
+- **Local dev has no real Table Storage access.** When
+  `AZURE_STORAGE_ACCOUNT_NAME` is unset, or any call fails: page-hit logging
+  silently no-ops, `POST /api/game-event` responds `503` (the game JS ignores
+  the failure and keeps playing), and the Stats tab shows "Analytics not
+  configured" instead of erroring.
+
 ## Conventions
 
 - Keep it simple: don't introduce a bundler, framework, or build step for
@@ -145,11 +207,12 @@ editable via a Microsoft Entra ID-gated `/admin` page.
   — it's generated by Bicep with a `uniqueString` suffix and must only be
   referenced via the `AZURE_WEBAPP_NAME` GitHub Actions repository variable.
 - Similarly, never hardcode the Azure SQL server FQDN, database name, Entra
-  client/tenant IDs, or the admin managed identity client ID — always read
-  `AZURE_SQL_SERVER_FQDN`, `AZURE_SQL_DATABASE_NAME`, `ENTRA_CLIENT_ID`,
-  `ENTRA_TENANT_ID`, and `AZURE_ADMIN_UAMI_CLIENT_ID` from environment
-  variables. There is no admin password to hardcode — Entra ID sign-in
-  replaced it entirely.
+  client/tenant IDs, the admin managed identity client ID, or the storage
+  account name — always read `AZURE_SQL_SERVER_FQDN`,
+  `AZURE_SQL_DATABASE_NAME`, `ENTRA_CLIENT_ID`, `ENTRA_TENANT_ID`,
+  `AZURE_ADMIN_UAMI_CLIENT_ID`, and `AZURE_STORAGE_ACCOUNT_NAME` from
+  environment variables. There is no admin password to hardcode — Entra ID
+  sign-in replaced it entirely.
 
 ## Deployment target
 
@@ -188,6 +251,11 @@ Required repo config:
   last one comes from the `nr-vse-azure-lab` Bicep deployment). Ordinary repo
   variables, not secrets — there's no client secret in this flow to protect.
   Also pushed into App Service application settings on deploy.
+- Variable `AZURE_STORAGE_ACCOUNT_NAME` — the Azure Storage account name
+  (Table Storage) from the `nr-vse-azure-lab` Bicep deployment, used for
+  usage analytics. Ordinary repo variable, not a secret — same pattern as the
+  SQL FQDN/DB name. Also pushed into App Service application settings on
+  deploy.
 
 ## Cross-repo relationship
 

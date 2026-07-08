@@ -11,6 +11,20 @@
 
   const HIGH_SCORE_KEY = "nr-vse-webdev-jump-highscore";
 
+  // Fire-and-forget usage telemetry (see analytics.js / server.js's
+  // /api/game-event) — purely aggregate start/end + score counts, no
+  // per-visitor identifier of any kind. Ignores failures entirely so a
+  // slow/unavailable/disabled analytics backend can never affect gameplay.
+  function reportGameEvent(event, score) {
+    const body = { game: "jump", event };
+    if (typeof score === "number") body.score = score;
+    fetch("/api/game-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }
+
   // Logical (design-resolution) canvas size — CSS scales it responsively,
   // we just draw in these coordinates. Bumped up 1.5x from the original
   // 600x220 for a roomier, less cramped playing window; all pixel-based
@@ -171,6 +185,7 @@
     }
     updateHud();
     messageEl.textContent = `Game over! Score ${finalScore}. Press Restart to try again.`;
+    reportGameEvent("end", finalScore);
   }
 
   function update(dt) {
@@ -508,6 +523,7 @@
     draw();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(loop);
+    reportGameEvent("start");
   }
 
   // --- Input handling ---
