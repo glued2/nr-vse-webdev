@@ -89,6 +89,24 @@
   padding: 0.6rem 1.4rem;
 }
 
+.tetris-btn-pause {
+  background: transparent;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.tetris-btn-pause:hover {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #0f0c29;
+}
+
+.tetris-btn-pause.is-paused {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #0f0c29;
+  border-color: transparent;
+}
+
 .tetris-message {
   min-height: 1.4em;
   color: var(--accent-2);

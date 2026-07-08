@@ -12,47 +12,53 @@
   const HIGH_SCORE_KEY = "nr-vse-webdev-jump-highscore";
 
   // Logical (design-resolution) canvas size — CSS scales it responsively,
-  // we just draw in these coordinates.
-  const WIDTH = canvas.width; // 600
-  const HEIGHT = canvas.height; // 220
-  const GROUND_Y = HEIGHT - 30;
+  // we just draw in these coordinates. Bumped up 1.5x from the original
+  // 600x220 for a roomier, less cramped playing window; all pixel-based
+  // constants below are scaled by the same 1.5x factor so the game feels
+  // identical, just bigger (see the physics note below for why that's safe).
+  const WIDTH = canvas.width; // 900
+  const HEIGHT = canvas.height; // 330
+  const GROUND_Y = HEIGHT - 45;
 
-  const PLAYER_X = 70;
-  const PLAYER_SIZE = 26;
-  const DUCK_HEIGHT = 14;
+  const PLAYER_X = 105;
+  const PLAYER_SIZE = 39;
+  const DUCK_HEIGHT = 21;
 
-  // Tuned for a floaty, forgiving arc: apex rise ~113px, ~0.73s total airtime.
-  // That clears the tallest obstacle (44px) with ~75px of margin, and the
+  // Tuned for a floaty, forgiving arc: apex rise ~170px, ~0.73s total airtime
+  // (scaling both velocity and gravity by the same factor keeps airtime and
+  // gameplay feel unchanged — only the distances involved get bigger). That
+  // clears the tallest obstacle (66px) with ~113px of margin, and the
   // "high enough to clear" window (~0.6s) is wide relative to how briefly an
   // obstacle actually overlaps the player horizontally (well under 0.1s even
   // at max speed) — so a jump timed anywhere in a comfortable window clears
   // cleanly. See the physics notes in the PR description for the full math.
-  const GRAVITY = 1700; // px/s^2
-  const JUMP_VELOCITY = -620; // px/s
+  const GRAVITY = 2550; // px/s^2
+  const JUMP_VELOCITY = -930; // px/s
 
-  const BASE_SPEED = 220; // px/s
-  const MAX_SPEED = 560;
-  const SPEED_RAMP = 6; // px/s per second survived
+  const BASE_SPEED = 330; // px/s
+  const MAX_SPEED = 840;
+  const SPEED_RAMP = 9; // px/s per second survived
 
   // Small forgiving hitbox insets so near-misses feel fair rather than cheap
   // (the drawn sprite is a bit bigger than what actually causes a collision).
-  const PLAYER_HITBOX_INSET_X = 5;
-  const PLAYER_HITBOX_INSET_Y = 3;
-  const OBSTACLE_HITBOX_INSET = 3;
+  const PLAYER_HITBOX_INSET_X = 7.5;
+  const PLAYER_HITBOX_INSET_Y = 4.5;
+  const OBSTACLE_HITBOX_INSET = 4.5;
 
   let player, obstacles, speed, distance, score, elapsed, running, gameOver, lastTime, spawnTimer, spawnGap, rafId;
 
   // Parallax background decoration — generated once, scrolled by `distance`.
-  const FAR_LAYER = Array.from({ length: 20 }, () => ({
+  // A few more stars/hexes than before since the canvas area is bigger.
+  const FAR_LAYER = Array.from({ length: 28 }, () => ({
     x: Math.random() * WIDTH,
-    y: 8 + Math.random() * (GROUND_Y - 30),
-    r: 1 + Math.random() * 1.4,
+    y: 12 + Math.random() * (GROUND_Y - 45),
+    r: 1.5 + Math.random() * 2.1,
     speedFactor: 0.06,
   }));
-  const NEAR_LAYER = Array.from({ length: 9 }, () => ({
+  const NEAR_LAYER = Array.from({ length: 13 }, () => ({
     x: Math.random() * WIDTH,
-    y: 16 + Math.random() * (GROUND_Y - 60),
-    r: 4 + Math.random() * 5,
+    y: 24 + Math.random() * (GROUND_Y - 90),
+    r: 6 + Math.random() * 7.5,
     speedFactor: 0.18,
   }));
 
@@ -129,18 +135,18 @@
       // Low flying obstacle — telegraphed with a distinct diamond shape and
       // a duck-arrow hint. Can be ducked under OR jumped over.
       kind = "fly";
-      width = 30;
-      height = 16;
-      y = GROUND_Y - PLAYER_SIZE - 6;
+      width = 45;
+      height = 24;
+      y = GROUND_Y - PLAYER_SIZE - 9;
     } else if (roll < 0.32) {
       kind = "tall";
-      width = 22;
-      height = 44;
+      width = 33;
+      height = 66;
       y = GROUND_Y - height;
     } else {
       kind = "block";
-      width = 20 + Math.random() * 12;
-      height = 26 + Math.random() * 14;
+      width = 30 + Math.random() * 18;
+      height = 39 + Math.random() * 21;
       y = GROUND_Y - height;
     }
     obstacles.push({ x: WIDTH + width, y, width, height, kind });
@@ -301,7 +307,7 @@
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
     ctx.lineWidth = 2;
-    const spacing = 34;
+    const spacing = 51;
     const offset = distance % spacing;
     ctx.beginPath();
     for (let tx = -offset; tx < WIDTH; tx += spacing) {
@@ -477,11 +483,11 @@
       ctx.fillStyle = "rgba(15, 12, 41, 0.55)";
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
       ctx.fillStyle = "#f4f4fb";
-      ctx.font = "bold 22px 'Segoe UI', Arial, sans-serif";
+      ctx.font = "bold 32px 'Segoe UI', Arial, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Game Over", WIDTH / 2, HEIGHT / 2 - 6);
-      ctx.font = "14px 'Segoe UI', Arial, sans-serif";
-      ctx.fillText("Press Restart or Space to try again", WIDTH / 2, HEIGHT / 2 + 18);
+      ctx.fillText("Game Over", WIDTH / 2, HEIGHT / 2 - 9);
+      ctx.font = "20px 'Segoe UI', Arial, sans-serif";
+      ctx.fillText("Press Restart or Space to try again", WIDTH / 2, HEIGHT / 2 + 27);
       ctx.textAlign = "start";
     }
   }
