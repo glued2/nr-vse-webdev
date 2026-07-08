@@ -1,0 +1,93 @@
+/* ================================
+   nr-vse-webdev — /admin page styles
+   Small additions on top of styles.css: only what's needed for the
+   password gate + textarea-based content editor.
+   ================================ */
+
+.admin-tag {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+}
+
+.admin-label {
+  display: block;
+  margin: 0.75rem 0 0.35rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.admin-input,
+.admin-textarea {
+  width: 100%;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  resize: vertical;
+}
+
+.admin-input:focus,
+.admin-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.admin-textarea {
+  margin-bottom: 0.75rem;
+}
+
+.admin-error {
+  color: #ff6b6b;
+  margin-top: 0.75rem;
+}
+
+.admin-message {
+  color: var(--text);
+}
+.admin-message.admin-message-error {
+  border-color: #ff6b6b;
+}
+.admin-message.admin-message-success {
+  border-color: var(--accent);
+}
+
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-toolbar p {
+  margin: 0;
+}
+
+.admin-btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  box-shadow: none;
+}
+
+.admin-btn-secondary:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--accent);
+}
+
+.admin-status {
+  margin-left: 1rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.page-source {
+  vertical-align: middle;
+}

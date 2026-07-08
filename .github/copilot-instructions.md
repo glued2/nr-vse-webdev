@@ -2,33 +2,78 @@
 
 ## What this repo is
 
-A jazzy little 3-page static demo site (Intro / Details / Contact), served by
-a minimal Express app and deployed to Azure App Service. No build step, no
-bundler, no framework — just static HTML/CSS/JS files behind a thin Express
-server.
+A jazzy little 3-page demo site (Intro / Details / Contact), served by a
+minimal Express app and deployed to Azure App Service. No build step, no
+bundler, no frontend framework — static HTML/CSS/JS templates behind a thin
+Express server, with page body content stored in an Azure SQL Database and
+editable via a password-gated `/admin` page.
 
 ## Structure
 
 - `public/index.html`, `public/details.html`, `public/contact.html` — the
-  three pages. `public/styles.css` and `public/app.js` provide shared
-  nav/styling (gradient background, glassy cards, nav bar, active-link
-  highlighting, mobile nav toggle) across all three.
-- `server.js` — Express server: `express.static` serves `public/`, plus
-  explicit `GET /`, `/details`, `/contact` routes that `sendFile` the
-  corresponding HTML.
-- `package.json` — single dependency (`express`), one script: `npm start`
-  (`node server.js`).
+  three page templates. Layout/nav/styling is static; the editable body
+  content is wrapped in `<!-- CONTENT:<key>:start/end -->` marker comments
+  and is swapped for the current Azure SQL content at request time (falling
+  back to the static content in the file if the DB is unavailable).
+  `public/styles.css` and `public/app.js` provide shared nav/styling
+  (gradient background, glassy cards, nav bar, active-link highlighting,
+  mobile nav toggle) across all pages.
+- `public/admin.html` / `public/admin.css` / `public/admin.js` — password-gated
+  content editor. Not linked from the main nav; reachable only at `/admin`.
+  Vanilla JS talking to the JSON API on `/admin/*` in `server.js`.
+- `server.js` — Express server: `express.static` (with `index:false`) serves
+  `public/`, plus explicit `GET /`, `/details`, `/contact` routes that render
+  DB-backed content into the static templates, `301` redirects from the old
+  `/index.html`/`/details.html`/`/contact.html` paths, `/play` and `/jump`
+  routes, and the `/admin` page + JSON API (login/logout/status/content).
+- `db.js` — Azure SQL access (see below). Exposes `isConfigured`,
+  `ensureSchemaAndSeed`, `getPageContent`, `getAllPageContent`,
+  `setPageContent`.
+- `package.json` — dependencies: `express`, `mssql`, `@azure/identity`,
+  `express-session`. One script: `npm start` (`node server.js`).
+
+## Database-backed content & admin page
+
+- Content lives in a `PageContent` table (`PageKey`, `Title`, `BodyHtml`,
+  `UpdatedAt`) in an Azure SQL Database provisioned by the companion
+  `nr-vse-azure-lab` infra repo.
+- **Auth is managed-identity only — never a SQL password.** `db.js` uses
+  `@azure/identity`'s `DefaultAzureCredential` to get an Azure AD token for
+  the App Service's system-assigned managed identity (scope
+  `https://database.windows.net/.default`) and passes it to `mssql` via
+  `authentication.type: 'azure-active-directory-access-token'`. A fresh
+  short-lived connection pool is opened per DB call (simplest way to avoid
+  token-expiry/refresh complexity for this low-traffic demo).
+- Schema creation + seeding (from the static templates' current content) runs
+  fire-and-forget on server startup, guarded by `IF NOT EXISTS` at both the
+  table and per-row level — safe to run on every deploy, never overwrites
+  edited content.
+- **Local dev has no real Azure SQL access.** When
+  `AZURE_SQL_SERVER_FQDN`/`AZURE_SQL_DATABASE_NAME` are unset, or any DB call
+  fails, every route/handler catches the error and falls back to the static
+  content baked into the HTML file — the server must never crash or error out
+  because SQL is unreachable.
+- `/admin` is gated by the `ADMIN_PASSWORD` env var (constant-time compare,
+  `express-session` cookie). **If `ADMIN_PASSWORD` is unset, admin editing is
+  disabled entirely** — never fall back to a default/hardcoded password.
 
 ## Conventions
 
 - Keep it simple: don't introduce a bundler, framework, or build step for
-  what's meant to stay a minimal static demo.
-- Any new page should follow the existing pattern: add the HTML file under
-  `public/`, add an explicit route in `server.js`, and reuse `styles.css`/
-  `app.js` for nav/styling consistency.
+  what's meant to stay a minimal, dependency-light demo.
+- Any new DB-backed page should follow the existing pattern: static HTML
+  template with `CONTENT:<key>` markers, an explicit route in `server.js`
+  that splices in DB content with a static fallback, and a corresponding
+  `PAGES` entry + admin editor card if it should be editable.
+- Any purely static new page should still follow the pre-existing pattern:
+  add the HTML file under `public/`, add an explicit route in `server.js`,
+  and reuse `styles.css`/`app.js` for nav/styling consistency.
 - **Never hardcode the Azure App Service name** anywhere in code or workflows
   — it's generated by Bicep with a `uniqueString` suffix and must only be
   referenced via the `AZURE_WEBAPP_NAME` GitHub Actions repository variable.
+- Similarly, never hardcode the Azure SQL server FQDN, database name, or the
+  admin password — always read `AZURE_SQL_SERVER_FQDN`,
+  `AZURE_SQL_DATABASE_NAME`, and `ADMIN_PASSWORD` from environment variables.
 
 ## Deployment target
 
@@ -57,7 +102,13 @@ Required repo config:
 
 - Secrets `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` —
   shared with the `nr-vse-azure-lab` App Registration.
+- Secret `ADMIN_PASSWORD` — password for the `/admin` content editor. Pushed
+  into the App Service's application settings on every deploy via
+  `az webapp config appsettings set`.
 - Variable `AZURE_WEBAPP_NAME` — set to the Bicep-generated App Service name.
+- Variables `AZURE_SQL_SERVER_FQDN` / `AZURE_SQL_DATABASE_NAME` — the Azure
+  SQL logical server FQDN and database name from the `nr-vse-azure-lab` Bicep
+  deployment. Also pushed into App Service application settings on deploy.
 
 ## Cross-repo relationship
 
