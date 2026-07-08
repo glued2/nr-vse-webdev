@@ -21,14 +21,40 @@
   const PLAYER_SIZE = 26;
   const DUCK_HEIGHT = 14;
 
-  const GRAVITY = 2200; // px/s^2
-  const JUMP_VELOCITY = -640; // px/s
+  // Tuned for a floaty, forgiving arc: apex rise ~113px, ~0.73s total airtime.
+  // That clears the tallest obstacle (44px) with ~75px of margin, and the
+  // "high enough to clear" window (~0.6s) is wide relative to how briefly an
+  // obstacle actually overlaps the player horizontally (well under 0.1s even
+  // at max speed) — so a jump timed anywhere in a comfortable window clears
+  // cleanly. See the physics notes in the PR description for the full math.
+  const GRAVITY = 1700; // px/s^2
+  const JUMP_VELOCITY = -620; // px/s
 
   const BASE_SPEED = 220; // px/s
   const MAX_SPEED = 560;
   const SPEED_RAMP = 6; // px/s per second survived
 
+  // Small forgiving hitbox insets so near-misses feel fair rather than cheap
+  // (the drawn sprite is a bit bigger than what actually causes a collision).
+  const PLAYER_HITBOX_INSET_X = 5;
+  const PLAYER_HITBOX_INSET_Y = 3;
+  const OBSTACLE_HITBOX_INSET = 3;
+
   let player, obstacles, speed, distance, score, elapsed, running, gameOver, lastTime, spawnTimer, spawnGap, rafId;
+
+  // Parallax background decoration — generated once, scrolled by `distance`.
+  const FAR_LAYER = Array.from({ length: 20 }, () => ({
+    x: Math.random() * WIDTH,
+    y: 8 + Math.random() * (GROUND_Y - 30),
+    r: 1 + Math.random() * 1.4,
+    speedFactor: 0.06,
+  }));
+  const NEAR_LAYER = Array.from({ length: 9 }, () => ({
+    x: Math.random() * WIDTH,
+    y: 16 + Math.random() * (GROUND_Y - 60),
+    r: 4 + Math.random() * 5,
+    speedFactor: 0.18,
+  }));
 
   function loadHighScore() {
     const raw = localStorage.getItem(HIGH_SCORE_KEY);
@@ -48,6 +74,7 @@
       vy: 0,
       ducking: false,
       onGround: true,
+      legPhase: 0,
     };
     obstacles = [];
     speed = BASE_SPEED;
@@ -72,8 +99,12 @@
     return player.ducking && player.onGround ? DUCK_HEIGHT : PLAYER_SIZE;
   }
 
+  // NOTE: previously this recomputed a fixed ground-relative top and ignored
+  // player.y entirely, so the physics in update() silently had no visible or
+  // collidable effect — jumping never actually moved the player. Fixed by
+  // reading the real simulated position.
   function playerTop() {
-    return GROUND_Y - playerHeight();
+    return player.y;
   }
 
   function jump() {
@@ -90,17 +121,18 @@
   }
 
   function spawnObstacle() {
-    // Occasionally spawn a taller obstacle, or a low "flying" one that
-    // requires ducking, to keep things interesting.
+    // Occasionally spawn a taller obstacle, or a low "flying" one that's
+    // clearly telegraphed as duck-or-jump, to keep things interesting.
     const roll = Math.random();
     let width, height, y, kind;
-    if (roll < 0.15) {
-      // Low flying obstacle — must duck under it.
+    if (roll < 0.08) {
+      // Low flying obstacle — telegraphed with a distinct diamond shape and
+      // a duck-arrow hint. Can be ducked under OR jumped over.
       kind = "fly";
       width = 30;
       height = 16;
       y = GROUND_Y - PLAYER_SIZE - 6;
-    } else if (roll < 0.35) {
+    } else if (roll < 0.32) {
       kind = "tall";
       width = 22;
       height = 44;
@@ -147,13 +179,16 @@
     if (!player.onGround) {
       player.vy += GRAVITY * dt;
       player.y += player.vy * dt;
-      if (player.y >= GROUND_Y - PLAYER_SIZE) {
-        player.y = GROUND_Y - PLAYER_SIZE;
+      const landingTop = GROUND_Y - PLAYER_SIZE;
+      if (player.y >= landingTop) {
+        player.y = landingTop;
         player.vy = 0;
         player.onGround = true;
       }
     } else {
-      player.y = GROUND_Y - PLAYER_SIZE;
+      player.y = GROUND_Y - playerHeight();
+      // Animate running legs — cadence speeds up with the game's speed.
+      player.legPhase += dt * (8 + speed / 40);
     }
 
     // Obstacles
@@ -169,11 +204,19 @@
     }
     obstacles = obstacles.filter((obs) => obs.x + obs.width > -10);
 
-    // Collision detection against the player's current hitbox.
-    const pTop = playerTop();
-    const pHeight = playerHeight();
+    // Collision detection against a slightly forgiving hitbox — a bit
+    // smaller than the drawn sprite on both the player and the obstacle,
+    // so close near-misses read as fair rather than cheap.
+    const pTop = playerTop() + PLAYER_HITBOX_INSET_Y;
+    const pHeight = Math.max(4, playerHeight() - PLAYER_HITBOX_INSET_Y * 2);
+    const pLeft = PLAYER_X + PLAYER_HITBOX_INSET_X;
+    const pWidth = Math.max(4, PLAYER_SIZE - PLAYER_HITBOX_INSET_X * 2);
     for (const obs of obstacles) {
-      if (rectsOverlap(PLAYER_X, pTop, PLAYER_SIZE, pHeight, obs.x, obs.y, obs.width, obs.height)) {
+      const ox = obs.x + OBSTACLE_HITBOX_INSET;
+      const oy = obs.y + OBSTACLE_HITBOX_INSET;
+      const ow = Math.max(2, obs.width - OBSTACLE_HITBOX_INSET * 2);
+      const oh = Math.max(2, obs.height - OBSTACLE_HITBOX_INSET * 2);
+      if (rectsOverlap(pLeft, pTop, pWidth, pHeight, ox, oy, ow, oh)) {
         endGame();
         break;
       }
@@ -182,50 +225,251 @@
     updateHud();
   }
 
-  function drawBackground() {
-    // Themed "sky" gradient using the site's accent colors, plus a ground line.
+  // --- Drawing helpers ---
+
+  function roundRectPath(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.lineTo(x + w - rr, y);
+    ctx.arcTo(x + w, y, x + w, y + rr, rr);
+    ctx.lineTo(x + w, y + h - rr);
+    ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+    ctx.lineTo(x + rr, y + h);
+    ctx.arcTo(x, y + h, x, y + h - rr, rr);
+    ctx.lineTo(x, y + rr);
+    ctx.arcTo(x, y, x + rr, y, rr);
+    ctx.closePath();
+  }
+
+  function hexPath(cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i - Math.PI / 2;
+      const px = cx + r * Math.cos(angle);
+      const py = cy + r * Math.sin(angle);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  function drawSky() {
     const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
     sky.addColorStop(0, "rgba(0, 229, 255, 0.10)");
     sky.addColorStop(1, "rgba(255, 47, 212, 0.05)");
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, WIDTH, GROUND_Y);
+  }
 
+  function drawParallaxLayer(layer, isHex) {
+    ctx.save();
+    for (const p of layer) {
+      let offset = (distance * p.speedFactor) % WIDTH;
+      let x = p.x - offset;
+      if (x < -10) x += WIDTH;
+      if (isHex) {
+        ctx.strokeStyle = "rgba(0, 229, 255, 0.18)";
+        ctx.lineWidth = 1;
+        hexPath(x, p.y, p.r);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
+        ctx.beginPath();
+        ctx.arc(x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawGround() {
     ctx.fillStyle = "rgba(15, 12, 41, 1)";
     ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 229, 255, 0.6)";
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = "rgba(0, 229, 255, 0.55)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, GROUND_Y);
     ctx.lineTo(WIDTH, GROUND_Y);
     ctx.stroke();
+
+    // Scrolling tick marks to reinforce forward motion.
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.lineWidth = 2;
+    const spacing = 34;
+    const offset = distance % spacing;
+    ctx.beginPath();
+    for (let tx = -offset; tx < WIDTH; tx += spacing) {
+      ctx.moveTo(tx, GROUND_Y + 4);
+      ctx.lineTo(tx + 14, GROUND_Y + 4);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawPlayer() {
     const top = playerTop();
     const h = playerHeight();
+    const airborne = !player.onGround;
+    const ducking = player.ducking && player.onGround;
+    const width = ducking ? PLAYER_SIZE + 8 : PLAYER_SIZE;
+    const left = ducking ? PLAYER_X - 4 : PLAYER_X;
+    const cx = left + width / 2;
+
     ctx.save();
-    ctx.shadowColor = "#00e5ff";
-    ctx.shadowBlur = 14;
-    ctx.fillStyle = "#00e5ff";
-    ctx.fillRect(PLAYER_X, top, PLAYER_SIZE, h);
+    ctx.shadowColor = "rgba(0, 229, 255, 0.85)";
+    ctx.shadowBlur = 16;
+
+    // Legs — tucked up while airborne or ducking, animated while running.
+    if (!ducking) {
+      const stride = (Math.sin(player.legPhase) + 1) / 2;
+      const legSpread = airborne ? 2 : 5;
+      const legLen = airborne ? 3 : 6 + stride * 4;
+      ctx.strokeStyle = "rgba(0, 229, 255, 0.9)";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(cx - legSpread, top + h - 2);
+      ctx.lineTo(cx - legSpread - (airborne ? 0 : 2), top + h - 2 + legLen);
+      ctx.moveTo(cx + legSpread, top + h - 2);
+      ctx.lineTo(cx + legSpread + (airborne ? 0 : 2), top + h - 2 + (airborne ? legLen : legLen - stride * 3));
+      ctx.stroke();
+    }
+
+    // Body — rounded glowing blob with a highlight gradient.
+    const grad = ctx.createRadialGradient(cx - width * 0.15, top + h * 0.3, 2, cx, top + h / 2, width * 0.9);
+    grad.addColorStop(0, "#eafffe");
+    grad.addColorStop(0.45, "#5df1ff");
+    grad.addColorStop(1, "#00a8c9");
+    ctx.fillStyle = grad;
+    roundRectPath(left, top, width, h, Math.min(9, h / 2));
+    ctx.fill();
+
+    // Eye — faces the direction of travel.
+    ctx.shadowBlur = 0;
+    const eyeX = left + width * 0.72;
+    const eyeY = top + h * 0.36;
+    const eyeR = Math.max(1.6, h * 0.13);
+    ctx.fillStyle = "#0f0c29";
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function crystalPath(obs) {
+    const { x, y, width: w, height: h } = obs;
+    const cx = x + w / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, y);
+    ctx.lineTo(x + w, y + h * 0.35);
+    ctx.lineTo(x + w * 0.78, y + h);
+    ctx.lineTo(x + w * 0.22, y + h);
+    ctx.lineTo(x, y + h * 0.35);
+    ctx.closePath();
+  }
+
+  function spikesPath(obs) {
+    const { x, y, width: w, height: h } = obs;
+    const baseY = y + h;
+    const spikeW = w / 3;
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.lineTo(x + spikeW * 0.5, y + h * 0.42);
+    ctx.lineTo(x + spikeW, baseY);
+    ctx.lineTo(x + spikeW * 1.5, y);
+    ctx.lineTo(x + spikeW * 2, baseY);
+    ctx.lineTo(x + spikeW * 2.5, y + h * 0.42);
+    ctx.lineTo(x + spikeW * 3, baseY);
+    ctx.closePath();
+  }
+
+  function drawFlyer(obs) {
+    const { x, y, width: w, height: h } = obs;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const pulse = 0.5 + 0.5 * Math.sin(elapsed * 6);
+
+    ctx.save();
+    ctx.shadowColor = "#ff2fd4";
+    ctx.shadowBlur = 12 + pulse * 6;
+    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+    grad.addColorStop(0, "#fff2ff");
+    grad.addColorStop(0.5, "#ff6df0");
+    grad.addColorStop(1, "#ff2fd4");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(cx, y);
+    ctx.lineTo(x + w, cy);
+    ctx.lineTo(cx, y + h);
+    ctx.lineTo(x, cy);
+    ctx.closePath();
+    ctx.fill();
+
+    // Dashed halo + a down-arrow hint make this kind unmistakable at a glance.
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+    ctx.setLineDash([2, 3]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.85, h * 0.75, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, y + h + 2);
+    ctx.lineTo(cx + 4, y + h + 2);
+    ctx.lineTo(cx, y + h + 7);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
   function drawObstacles() {
-    ctx.save();
-    ctx.shadowColor = "#ff2fd4";
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = "#ff2fd4";
     for (const obs of obstacles) {
-      ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+      if (obs.kind === "fly") {
+        drawFlyer(obs);
+        continue;
+      }
+      ctx.save();
+      ctx.shadowColor = "#ff2fd4";
+      ctx.shadowBlur = 10;
+      if (obs.kind === "tall") {
+        const grad = ctx.createLinearGradient(obs.x, obs.y, obs.x, obs.y + obs.height);
+        grad.addColorStop(0, "#ffd9fb");
+        grad.addColorStop(1, "#c400a0");
+        ctx.fillStyle = grad;
+        spikesPath(obs);
+        ctx.fill();
+      } else {
+        const grad = ctx.createLinearGradient(obs.x, obs.y, obs.x + obs.width, obs.y + obs.height);
+        grad.addColorStop(0, "#ffcdf6");
+        grad.addColorStop(1, "#b3009e");
+        ctx.fillStyle = grad;
+        crystalPath(obs);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   function draw() {
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
-    drawBackground();
+    drawSky();
+    drawParallaxLayer(FAR_LAYER, false);
+    drawParallaxLayer(NEAR_LAYER, true);
+    drawGround();
     drawObstacles();
     drawPlayer();
 
