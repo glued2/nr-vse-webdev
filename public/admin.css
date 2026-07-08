@@ -5,14 +5,24 @@
    look instead of Quill's default white background.
    ================================ */
 
-.admin-tag {
+.nav-admin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.nav-admin-user {
   color: var(--text-dim);
   font-size: 0.85rem;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  border: 1px solid var(--card-border);
-  border-radius: 999px;
-  padding: 0.25rem 0.75rem;
+  white-space: nowrap;
+}
+
+.nav-admin-user strong {
+  color: var(--text);
+}
+
+.nav-links a.nav-admin-logout {
+  color: var(--accent);
 }
 
 .admin-label {

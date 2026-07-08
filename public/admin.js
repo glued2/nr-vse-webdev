@@ -9,6 +9,29 @@ document.addEventListener("DOMContentLoaded", () => {
   const loginError = document.getElementById("login-error");
   const adminUsername = document.getElementById("admin-username");
   const messageBox = document.getElementById("admin-message");
+  const navAdminItem = document.getElementById("nav-admin-item");
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+  }
+
+  // Reflects sign-in state in the "Admin" nav item itself: signed out shows
+  // a plain link to /admin (unchanged); signed in swaps it for a "Signed in
+  // as ..." indicator plus a sign-out link, driven off the same
+  // /admin/status response the rest of this page already uses.
+  function updateNavAdminItem(status) {
+    if (!navAdminItem) return;
+    if (status.loggedIn && status.user) {
+      const label = status.user.name || status.user.username || "admin";
+      navAdminItem.innerHTML =
+        `<span class="nav-admin-user">Signed in as <strong>${escapeHtml(label)}</strong></span>` +
+        `<a href="/auth/logout" class="nav-admin-logout">Sign out</a>`;
+    } else {
+      navAdminItem.innerHTML = `<a href="/admin">Admin</a>`;
+    }
+  }
 
   // Sign-in failures land back here as /admin?error=... (see server.js's
   // /auth/callback) since a full Entra redirect flow can't report errors any
@@ -68,6 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function refreshStatus() {
     const res = await fetch("/admin/status");
     const status = await res.json();
+    updateNavAdminItem(status);
     if (!status.adminEnabled) {
       showPanel(disabledPanel);
       return;
