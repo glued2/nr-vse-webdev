@@ -15,6 +15,7 @@ const session = require("express-session");
 const db = require("./db");
 const auth = require("./auth");
 const analytics = require("./analytics");
+const buildLog = require("./buildlog");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -221,6 +222,70 @@ app.get("/jump", (req, res) => {
 app.get("/eat", (req, res) => {
   recordPageHit(req);
   res.sendFile(path.join(PUBLIC_DIR, "eat.html"));
+});
+
+// --- Build Log: recent merged PRs across this project's repos -----------
+// Server-rendered (not a static sendFile) since the content comes live from
+// the GitHub REST API — see buildlog.js for the fetch/cache logic. Reuses
+// the same CONTENT:<key> marker mechanism as the DB-backed sections (a
+// generic string-replace utility, not tied to the SECTIONS/admin-editor
+// list), but "build-log" is deliberately NOT registered in SECTIONS: this
+// content isn't editable via /admin, it's always driven live from GitHub.
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderBuildLogEntriesHtml(entries) {
+  if (!entries.length) {
+    return `<p class="build-log-notice">No merged pull requests found yet.</p>`;
+  }
+  const rows = entries
+    .map((e) => {
+      const mergedDisplay = new Date(e.mergedAt).toISOString().slice(0, 10);
+      return `      <tr>
+        <td><span class="repo-badge">${escapeHtml(e.repo)}</span></td>
+        <td><a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a></td>
+        <td>#${e.number}</td>
+        <td>${mergedDisplay}</td>
+      </tr>`;
+    })
+    .join("\n");
+  return `<table class="build-log-table">
+    <thead>
+      <tr><th>Repo</th><th>Title</th><th>PR</th><th>Merged</th></tr>
+    </thead>
+    <tbody>
+${rows}
+    </tbody>
+  </table>`;
+}
+
+app.get("/build-log", async (req, res) => {
+  recordPageHit(req);
+  const template = readTemplate("build-log.html");
+  let inner;
+  try {
+    const { entries, stale, error } = await buildLog.getBuildLog();
+    inner = renderBuildLogEntriesHtml(entries);
+    if (stale) {
+      const notice = entries.length
+        ? "Showing the last known history — live GitHub data is temporarily unavailable."
+        : "Build history is temporarily unavailable — please check back soon.";
+      console.warn(`[build-log] Serving stale/empty data: ${error}`);
+      inner = `<p class="build-log-notice">${notice}</p>\n${entries.length ? inner : ""}`;
+    }
+  } catch (err) {
+    console.warn(`[build-log] Unexpected failure rendering build log: ${err.message}`);
+    inner = `<p class="build-log-notice">Build history is temporarily unavailable — please check back soon.</p>`;
+  }
+  const html = replaceMarkerContent(template, "build-log", inner);
+  res.set("Content-Type", "text/html; charset=utf-8").send(html);
 });
 
 // --- Game analytics: fire-and-forget events from play.html/jump.html -----

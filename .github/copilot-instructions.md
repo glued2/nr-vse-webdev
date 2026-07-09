@@ -26,8 +26,8 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   `public/styles.css` and `public/app.js` provide shared nav/styling
   (gradient background, glassy cards, nav bar, active-link highlighting,
   mobile nav toggle) across all pages. The nav is identical everywhere —
-  Intro / Details / Contact / Play: Blocks / Play: Jump / Play: Eat / Admin,
-  in that
+  Intro / Details / Contact / Play: Blocks / Play: Jump / Play: Eat / Build
+  Log / Admin, in that
   order, "Admin" always last — including on `/admin` itself.
 - `public/play.html`, `public/jump.html`, `public/eat.html` — three small
   standalone browser
@@ -58,6 +58,15 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   `quill` npm package (pinned to `1.3.7`, the last release with a prebuilt
   `dist/` bundle) and served from `node_modules` via a `/vendor/quill`
   static route — no CDN.
+- `public/build-log.html` — the "Build Log" page (see "Build log" below),
+  server-rendered by `GET /build-log` in `server.js` from `buildlog.js`'s
+  cached GitHub API data. Reuses the same `<!-- CONTENT:build-log:start/end
+  -->` marker mechanism as the DB-backed sections, but is deliberately NOT
+  registered in `SECTIONS` — its content is always live from GitHub, never
+  editable via `/admin`.
+- `buildlog.js` — fetches recently merged pull requests from this project's
+  GitHub repos (see "Build log" below). Exposes `getBuildLog()` (never
+  throws), `REPOS`, `CACHE_TTL_MS`.
 - `server.js` — Express server: `express.static` (with `index:false`) serves
   `public/`, plus explicit `GET /`, `/details`, `/contact` routes that render
   DB-backed content into the static templates (and fire-and-forget log a
@@ -201,6 +210,44 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   the failure and keeps playing), and the Stats tab shows "Analytics not
   configured" instead of erroring.
 
+## Build log
+
+- `GET /build-log` (`public/build-log.html` + `buildlog.js`) shows recent
+  merged pull requests across this project's GitHub repos, so visitors can
+  see the actual development activity behind the "built via AI
+  collaboration" narrative on the Details page.
+- **Deliberately secretless, same as everything else in this project**:
+  `buildlog.js` calls the GitHub REST API (`GET
+  /repos/{owner}/{repo}/pulls?state=closed...`) fully unauthenticated — no
+  PAT, no GitHub App, no stored credential of any kind — just a required
+  `User-Agent` header (GitHub rejects unauthenticated requests without one).
+- **In-memory cache, `CACHE_TTL_MS` = 15 minutes.** Results across all
+  configured repos are combined, sorted by `merged_at` descending, and
+  cached; a request only re-hits the GitHub API once the cache has expired,
+  keeping total API usage to roughly 1 request per repo per 15 minutes
+  (~12/hour combined) regardless of site traffic — comfortably under
+  GitHub's 60 req/hour unauthenticated-per-IP limit.
+- **Graceful degradation, per repo.** Each repo is fetched independently
+  (`Promise.allSettled`, not `Promise.all`) so one repo failing/rate-limited
+  doesn't blank out the others' data. If a refresh fails entirely and no
+  prior cache exists, the page shows a friendly "Build history is
+  temporarily unavailable" message — never a raw error or crash. If a
+  refresh fails but a previous cache exists, the last known-good data is
+  served instead (marked stale in a log line, not shown to the visitor).
+- **Important known limitation: only public repos will ever show data.**
+  `buildlog.REPOS` currently lists `glued2/nr-vse-webdev`,
+  `glued2/nr-vse-azure-lab`, and `glued2/nr-azure-lab-workflows`, but the
+  latter two are **private** repositories — unauthenticated GitHub API
+  requests against a private repo return `404` (GitHub intentionally hides
+  private repos from anonymous callers rather than returning `403`, to
+  avoid leaking their existence). This isn't a bug or a rate-limit issue; it
+  will never resolve itself without either making those repos public or
+  switching to an authenticated request (which would reintroduce a stored
+  credential, contradicting the "completely secretless" requirement this
+  feature was explicitly built around). Until/unless that changes, the Build
+  Log will only ever display merged PRs from `nr-vse-webdev`. See the
+  "Cross-repo relationship" section below.
+
 ## Conventions
 
 - Keep it simple: don't introduce a bundler, framework, or build step for
@@ -270,8 +317,14 @@ Required repo config:
 
 ## Cross-repo relationship
 
-- Infra (Bicep) lives in [`glued2/nr-vse-azure-lab`](https://github.com/glued2/nr-vse-azure-lab).
+- Infra (Bicep) lives in [`glued2/nr-vse-azure-lab`](https://github.com/glued2/nr-vse-azure-lab)
+  (**private**).
 - Shared/reusable CI/CD workflow logic for that infra repo lives in
-  [`glued2/nr-azure-lab-workflows`](https://github.com/glued2/nr-azure-lab-workflows).
+  [`glued2/nr-azure-lab-workflows`](https://github.com/glued2/nr-azure-lab-workflows)
+  (**private**).
 - This repo only contains site content and its own simple deploy workflow —
   it does **not** consume those reusable workflows.
+- Both of those repos being private is why the `/build-log` page (see
+  "Build log" above) can currently only ever show pull requests from this
+  repo (`nr-vse-webdev`, the only public one) — its unauthenticated GitHub
+  API calls get a `404` for the other two.
