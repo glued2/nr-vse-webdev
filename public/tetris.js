@@ -80,13 +80,33 @@
     };
   }
 
+  // --- Leveling / fall-speed curve --------------------------------------
+  //
+  // Levels advance every LINES_PER_LEVEL cleared lines (previously 10 —
+  // players felt leveling was far too slow, e.g. only reaching level 4
+  // after 34 lines). Fall speed is derived from the level via a
+  // percentage-based decay (each level shaves off a fixed *fraction* of
+  // the current interval, not a fixed number of ms) so the speedup stays
+  // clearly noticeable level-to-level while naturally tapering off as it
+  // approaches MIN_DROP_INTERVAL, rather than the old flat -70ms/level
+  // step which produced only a barely-perceptible ~9% change at low
+  // levels and would go negative/clamp abruptly at high levels.
+  const LINES_PER_LEVEL = 5;
+  const BASE_DROP_INTERVAL = 800;
+  const MIN_DROP_INTERVAL = 100;
+  const DROP_INTERVAL_DECAY = 0.86; // ~14% faster falls per level
+
+  function dropIntervalForLevel(lvl) {
+    return Math.max(MIN_DROP_INTERVAL, BASE_DROP_INTERVAL * Math.pow(DROP_INTERVAL_DECAY, lvl - 1));
+  }
+
   let board = createEmptyBoard();
   let current = makePiece(randomPieceName());
   let next = randomPieceName();
   let score = 0;
   let lines = 0;
   let level = 1;
-  let dropInterval = 800;
+  let dropInterval = BASE_DROP_INTERVAL;
   let dropCounter = 0;
   let lastTime = 0;
   let paused = false;
@@ -147,8 +167,8 @@
       const points = [0, 100, 300, 500, 800][cleared] || cleared * 200;
       score += points * level;
       lines += cleared;
-      level = 1 + Math.floor(lines / 10);
-      dropInterval = Math.max(120, 800 - (level - 1) * 70);
+      level = 1 + Math.floor(lines / LINES_PER_LEVEL);
+      dropInterval = dropIntervalForLevel(level);
       updateStats();
     }
   }
@@ -309,7 +329,7 @@
     score = 0;
     lines = 0;
     level = 1;
-    dropInterval = 800;
+    dropInterval = BASE_DROP_INTERVAL;
     dropCounter = 0;
     gameOver = false;
     paused = false;
