@@ -98,8 +98,16 @@
   // count >= open-cell count, i.e. it's not a spanning tree), retrying
   // with fresh random obstacle placement if either check fails.
   const MAZE_GEN_MAX_ATTEMPTS = 30;
-  const MIN_PILLAR_SEEDS = 4;
-  const MAX_PILLAR_SEEDS = 7;
+  // The canonical quadrant (top-left) is divided into a QUADRANT_STRATA x
+  // QUADRANT_STRATA grid of sub-regions, and every sub-region gets one
+  // pillar-placement attempt. This guarantees even wall density across the
+  // whole grid — including the very center — rather than the density
+  // pillars randomly landing wherever chance happens to put them (which
+  // previously left a large, permanently pillar-free plaza in the middle,
+  // since the old sampling range never actually reached the true center
+  // column/row at all).
+  const QUADRANT_STRATA = 3;
+  const STRATUM_PLACEMENT_ATTEMPTS = 14;
 
   function buildBorder() {
     wallSet.clear();
@@ -137,20 +145,49 @@
   }
 
   function scatterPillars() {
-    const seedCount =
-      MIN_PILLAR_SEEDS + Math.floor(Math.random() * (MAX_PILLAR_SEEDS - MIN_PILLAR_SEEDS + 1));
+    // Math.floor(COLS/2) / Math.floor(ROWS/2) land exactly on the grid's
+    // true center column/row for these odd-sized dimensions (e.g. col 8 of
+    // 0..16, row 9 of 0..18) — mirrorPositions() naturally collapses to
+    // fewer than 4 distinct cells for a point on the center line, so it's
+    // safe to include the center itself in the sampled range.
     const halfCol = Math.floor(COLS / 2);
     const halfRow = Math.floor(ROWS / 2);
-    let placed = 0;
-    let tries = 0;
-    while (placed < seedCount && tries < seedCount * 25) {
-      tries++;
-      const col = 2 + Math.floor(Math.random() * Math.max(1, halfCol - 4));
-      const row = 2 + Math.floor(Math.random() * Math.max(1, halfRow - 4));
-      const mirrored = mirrorPositions(col, row);
-      if (!mirrored.every(([c, r]) => isIsolatedSpot(c, r))) continue;
-      for (const [c, r] of mirrored) addWall(c, r);
-      placed++;
+    const colMin = 2;
+    const colMax = halfCol;
+    const rowMin = 2;
+    const rowMax = halfRow;
+    const colSpan = colMax - colMin + 1;
+    const rowSpan = rowMax - rowMin + 1;
+    const colStep = Math.max(1, Math.ceil(colSpan / QUADRANT_STRATA));
+    const rowStep = Math.max(1, Math.ceil(rowSpan / QUADRANT_STRATA));
+
+    const strata = [];
+    for (let sc = 0; sc < QUADRANT_STRATA; sc++) {
+      for (let sr = 0; sr < QUADRANT_STRATA; sr++) {
+        const cLo = colMin + sc * colStep;
+        const cHi = Math.min(colMax, cLo + colStep - 1);
+        const rLo = rowMin + sr * rowStep;
+        const rHi = Math.min(rowMax, rLo + rowStep - 1);
+        if (cLo > cHi || rLo > rHi) continue;
+        const centerDist = Math.abs((cLo + cHi) / 2 - halfCol) + Math.abs((rLo + rHi) / 2 - halfRow);
+        strata.push({ cLo, cHi, rLo, rHi, centerDist });
+      }
+    }
+    // Fill the strata nearest the true center first, so a centrally-placed
+    // pillar never loses out on isolation-neighborhood space to pillars
+    // placed earlier near the edges — directly guarantees the center gets
+    // first claim on the limited isolated-spot real estate.
+    strata.sort((a, b) => a.centerDist - b.centerDist);
+
+    for (const s of strata) {
+      for (let attempt = 0; attempt < STRATUM_PLACEMENT_ATTEMPTS; attempt++) {
+        const col = s.cLo + Math.floor(Math.random() * (s.cHi - s.cLo + 1));
+        const row = s.rLo + Math.floor(Math.random() * (s.rHi - s.rLo + 1));
+        const mirrored = mirrorPositions(col, row);
+        if (!mirrored.every(([c, r]) => isIsolatedSpot(c, r))) continue;
+        for (const [c, r] of mirrored) addWall(c, r);
+        break;
+      }
     }
   }
 
@@ -252,8 +289,41 @@
     return chosen;
   }
 
+  // --- Power pellet regeneration ---------------------------------------
+  //
+  // Once more than half of the power pellets spawned for the current
+  // game/level have been eaten, top the supply back up by converting a
+  // still-available regular dot into a power pellet — reusing the same
+  // spacing/exclusion rules as the initial placement (never a wall or
+  // protected spawn cell, prefer staying spaced out from the pellets that
+  // are still on the board) so it stays a meaningful, non-clustered
+  // strategic resource throughout the level rather than running out.
+  function pickRegenPowerCell() {
+    const currentPower = [...powerSet].map((k) => k.split(",").map(Number));
+    const candidates = [];
+    for (const k of dotSet) {
+      if (PROTECTED_CELLS.has(k)) continue;
+      candidates.push(k.split(",").map(Number));
+    }
+    if (!candidates.length) return null;
+    const spaced = candidates.filter((cand) => currentPower.every((p) => manhattan(cand, p) >= POWER_MIN_DIST));
+    const pool = spaced.length ? spaced : candidates;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function maybeRegeneratePowerPellet() {
+    if (!powerOriginalCount) return;
+    if (powerSet.size > powerOriginalCount / 2) return;
+    const cell = pickRegenPowerCell();
+    if (!cell) return;
+    const k = key(cell[0], cell[1]);
+    dotSet.delete(k);
+    powerSet.add(k);
+  }
+
   let dotSet,
     powerSet,
+    powerOriginalCount,
     player,
     ghosts,
     score,
@@ -281,6 +351,7 @@
   function populateDots() {
     dotSet = new Set();
     powerSet = new Set(pickPowerCells().map(([c, r]) => key(c, r)));
+    powerOriginalCount = powerSet.size;
     for (let r = 1; r < ROWS - 1; r++) {
       for (let c = 1; c < COLS - 1; c++) {
         const k = key(c, r);
@@ -462,6 +533,7 @@
       powerSet.delete(pk);
       score += 50;
       vulnerableUntil = elapsed + VULNERABLE_DURATION;
+      maybeRegeneratePowerPellet();
     }
 
     if (!started) {
