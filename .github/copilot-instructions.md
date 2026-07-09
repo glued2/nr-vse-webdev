@@ -42,7 +42,27 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   deliberately built with wholly original geometric art (hand-drawn
   circles/arcs on canvas) rather than any copyrighted character/sprite
   designs, in the same "inspired by, not copied from" spirit as
-  Blocks (Tetris-like) and Jump (Chrome-dino-like).
+  Blocks (Tetris-like) and Jump (Chrome-dino-like). `tetris.js` levels up
+  every `LINES_PER_LEVEL` (5) cleared lines, with fall speed following a
+  percentage-decay curve (`dropIntervalForLevel()`: `BASE_DROP_INTERVAL *
+  DROP_INTERVAL_DECAY^(level-1)`, floored at `MIN_DROP_INTERVAL`) rather than
+  a flat linear step-down, so speed keeps meaningfully increasing at higher
+  levels instead of hitting a floor and going flat. `eat.js`'s maze is
+  procedurally regenerated each game/level (`generateMaze()` →
+  `scatterPillars()`): candidate pillar positions are drawn from a
+  `QUADRANT_STRATA x QUADRANT_STRATA` grid of sub-regions (nearest-center
+  sub-region filled first) rather than a single uniform-random sample, so
+  wall density stays even across the whole grid — including the true center
+  — instead of leaving a pillar-free plaza; every candidate layout is
+  verified via flood fill to be fully connected with at least one loop
+  (`mazeIsConnectedWithLoops()`) before being accepted, regenerating with
+  fresh random placement otherwise. Power pellets
+  (`pickPowerCells()`/`quadrantsForPowerCells()`) are placed one per quadrant
+  at randomized, spaced-out positions rather than fixed corners, and
+  `maybeRegeneratePowerPellet()` converts a regular dot back into a power
+  pellet (via `pickRegenPowerCell()`, reusing the same spacing/exclusion
+  rules) once more than half of the current game/level's power pellets have
+  been eaten, so the supply never fully runs dry mid-level.
 - `public/admin.html` / `public/admin.css` / `public/admin.js` — Microsoft
   Entra ID-gated content editor, one Quill editor card per editable section,
   plus a "Stats" tab showing the usage analytics dashboard (hits-by-page

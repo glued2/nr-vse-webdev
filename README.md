@@ -17,7 +17,15 @@ Entra ID-gated `/admin` page.
 - **`public/play.html`** / **`public/jump.html`** / **`public/eat.html`** —
   Three small standalone browser games ("Play: Blocks", "Play: Jump", and
   "Play: Eat" in the nav), served via the `/play`, `/jump`, and `/eat` routes
-  in `server.js`. Static, not DB-backed.
+  in `server.js`. Static, not DB-backed. Play: Blocks (`tetris.js`) levels up
+  every 5 cleared lines, with fall speed on a percentage-decay curve so it
+  keeps getting noticeably faster at higher levels instead of flattening
+  out. Play: Eat (`eat.js`) procedurally regenerates its maze each
+  game/level — pillars are placed stratum-by-stratum across the grid for
+  even wall density (no empty center plaza), then verified via flood fill to
+  be fully connected with at least one loop — and tops up power pellets
+  mid-level (converting a regular dot back into one) once more than half of
+  the current supply has been eaten.
 - **`public/build-log.html`** — Build Log page. Shows recent merged pull
   requests for this repo, server-rendered via
   `GET /build-log` in `server.js` from `buildlog.js`'s cached GitHub API
