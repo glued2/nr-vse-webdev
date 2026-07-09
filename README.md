@@ -18,11 +18,15 @@ Entra ID-gated `/admin` page.
   Three small standalone browser games ("Play: Blocks", "Play: Jump", and
   "Play: Eat" in the nav), served via the `/play`, `/jump`, and `/eat` routes
   in `server.js`. Static, not DB-backed.
+- **`public/build-log.html`** — Build Log page. Shows recent merged pull
+  requests for this repo, server-rendered via
+  `GET /build-log` in `server.js` from `buildlog.js`'s cached GitHub API
+  data (see [Build log](#build-log) below).
 - **`public/styles.css`** / **`public/app.js`** — Shared styling (animated
   gradient background, glassy cards, gradient nav bar) and a small script for
   active-link highlighting, fade-in on load, and the mobile nav toggle. The
   nav bar (Intro / Details / Contact / Play: Blocks / Play: Jump / Play: Eat /
-  Admin) is
+  Build Log / Admin) is
   identical across every page, including `/admin`, so `app.js`'s active-link
   highlighting and mobile toggle work everywhere without extra code.
 - **`public/admin.html`** / **`public/admin.css`** / **`public/admin.js`** —
@@ -50,6 +54,9 @@ Entra ID-gated `/admin` page.
   analytics dashboard (managed-identity/Azure AD auth only, same "no secrets"
   pattern as `db.js`/`auth.js` — see [Usage analytics](#usage-analytics)
   below).
+- **`buildlog.js`** — Fetches and caches recently merged pull requests from
+  GitHub's public REST API (fully unauthenticated — see [Build
+  log](#build-log) below).
 - **`package.json`** — Dependencies: `express`, `mssql`, `@azure/identity`,
   `@azure/msal-node`, `@azure/data-tables`, `express-session`. One script:
   `npm start`.
@@ -135,7 +142,8 @@ sections (six in total: two on Intro, three on Details, one on Contact).
   otherwise) and return a graceful error (503) if Azure SQL can't be reached
   rather than crashing.
 - `/admin` renders the exact same nav bar as every other page (Intro /
-  Details / Contact / Play: Blocks / Play: Jump / Play: Eat / Admin). Its own
+  Details / Contact / Play: Blocks / Play: Jump / Play: Eat / Build Log /
+  Admin). Its own
   "Admin" nav
   item is dynamic: signed out (or Entra not configured), it's a plain link to
   `/admin`; signed in, `admin.js` swaps it for "Signed in as **{name}** · Sign
@@ -188,6 +196,31 @@ database.
   by page, hits-by-day for the last 14 days (rendered as a CSS-only bar
   chart — no external chart library), and per-game play count/high
   score/average score.
+
+## Build log
+
+`/build-log` shows recent merged pull requests for this repo, pulled live from
+the [GitHub REST API](https://docs.github.com/en/rest/pulls/pulls) — a
+"receipts" page for the "built via AI collaboration" story told on the
+Details page.
+
+- **Fully secretless, same as everything else here** — `buildlog.js` makes
+  plain unauthenticated GitHub API requests (no PAT, no GitHub App, no stored
+  credential of any kind), just a required `User-Agent` header (GitHub
+  rejects unauthenticated requests without one).
+- **In-memory cache, refreshed every 15 minutes.** Merged PRs are sorted by
+  merge date and cached; a request only calls the GitHub API again once that
+  cache expires — comfortably under GitHub's 60 requests/hour
+  unauthenticated-per-IP limit, no matter how much site traffic there is.
+- **Graceful, per-repo degradation.** `buildlog.REPOS` is fetched via
+  `Promise.allSettled`, so if more repos are ever added, one repo
+  failing/rate-limited wouldn't blank out the others.
+- **`buildlog.REPOS` currently lists only `nr-vse-webdev`.** The companion
+  infra repos (`nr-vse-azure-lab`, `nr-azure-lab-workflows`) are private, and
+  unauthenticated GitHub API requests against a private repo return `404` —
+  a deliberate choice to keep this feature fully secretless rather than
+  introduce a stored credential. They could be added back to `REPOS` if/when
+  those repos are made public.
 
 ## Running locally
 
