@@ -189,6 +189,7 @@ async function getStatsSummary() {
   const gameAgg = {
     blocks: { plays: 0, scores: [] },
     jump: { plays: 0, scores: [] },
+    eat: { plays: 0, scores: [] },
   };
   for await (const entity of getGameEventsClient().listEntities({
     queryOptions: { filter: `PartitionKey ge '${cutoff}'` },
