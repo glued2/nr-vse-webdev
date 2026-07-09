@@ -19,7 +19,7 @@ Entra ID-gated `/admin` page.
   "Play: Eat" in the nav), served via the `/play`, `/jump`, and `/eat` routes
   in `server.js`. Static, not DB-backed.
 - **`public/build-log.html`** — Build Log page. Shows recent merged pull
-  requests across this project's GitHub repos, server-rendered via
+  requests for this repo, server-rendered via
   `GET /build-log` in `server.js` from `buildlog.js`'s cached GitHub API
   data (see [Build log](#build-log) below).
 - **`public/styles.css`** / **`public/app.js`** — Shared styling (animated
@@ -199,37 +199,28 @@ database.
 
 ## Build log
 
-`/build-log` shows recent merged pull requests across this project's GitHub
-repos, pulled live from the [GitHub REST
-API](https://docs.github.com/en/rest/pulls/pulls) — a "receipts" page for the
-"built via AI collaboration" story told on the Details page.
+`/build-log` shows recent merged pull requests for this repo, pulled live from
+the [GitHub REST API](https://docs.github.com/en/rest/pulls/pulls) — a
+"receipts" page for the "built via AI collaboration" story told on the
+Details page.
 
 - **Fully secretless, same as everything else here** — `buildlog.js` makes
   plain unauthenticated GitHub API requests (no PAT, no GitHub App, no stored
   credential of any kind), just a required `User-Agent` header (GitHub
   rejects unauthenticated requests without one).
-- **In-memory cache, refreshed every 15 minutes.** Merged PRs from all
-  configured repos are combined, sorted by merge date, and cached; a request
-  only calls the GitHub API again once that cache expires. This keeps total
-  API usage to roughly one request per repo per 15 minutes — comfortably
-  under GitHub's 60 requests/hour unauthenticated-per-IP limit, no matter how
-  much site traffic there is.
-- **Graceful, per-repo degradation.** Each repo is fetched independently, so
-  one repo failing or being rate-limited doesn't blank out the others. If a
-  refresh fails and no prior cache exists, the page shows a friendly "Build
-  history is temporarily unavailable" message instead of an error; if a
-  refresh fails but a previous cache exists, the last known-good data is
-  served instead.
-- **Known limitation — only public repos will ever show data.** `buildlog.js`
-  is configured to combine PRs from `nr-vse-webdev`, `nr-vse-azure-lab`, and
-  `nr-azure-lab-workflows`, but the latter two are currently **private**
-  repositories. Unauthenticated GitHub API requests against a private repo
-  return `404` (GitHub hides private repos from anonymous callers rather than
-  returning `403`, to avoid leaking their existence) — this isn't transient
-  or rate-limit related, so those two repos' pull requests won't appear
-  unless/until they're made public (switching to an authenticated request
-  would reintroduce a stored credential, which defeats the point). Today,
-  `/build-log` will only ever display merged PRs from this repo.
+- **In-memory cache, refreshed every 15 minutes.** Merged PRs are sorted by
+  merge date and cached; a request only calls the GitHub API again once that
+  cache expires — comfortably under GitHub's 60 requests/hour
+  unauthenticated-per-IP limit, no matter how much site traffic there is.
+- **Graceful, per-repo degradation.** `buildlog.REPOS` is fetched via
+  `Promise.allSettled`, so if more repos are ever added, one repo
+  failing/rate-limited wouldn't blank out the others.
+- **`buildlog.REPOS` currently lists only `nr-vse-webdev`.** The companion
+  infra repos (`nr-vse-azure-lab`, `nr-azure-lab-workflows`) are private, and
+  unauthenticated GitHub API requests against a private repo return `404` —
+  a deliberate choice to keep this feature fully secretless rather than
+  introduce a stored credential. They could be added back to `REPOS` if/when
+  those repos are made public.
 
 ## Running locally
 

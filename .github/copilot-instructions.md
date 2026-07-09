@@ -64,8 +64,8 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   -->` marker mechanism as the DB-backed sections, but is deliberately NOT
   registered in `SECTIONS` — its content is always live from GitHub, never
   editable via `/admin`.
-- `buildlog.js` — fetches recently merged pull requests from this project's
-  GitHub repos (see "Build log" below). Exposes `getBuildLog()` (never
+- `buildlog.js` — fetches recently merged pull requests from this repo (see
+  "Build log" below). Exposes `getBuildLog()` (never
   throws), `REPOS`, `CACHE_TTL_MS`.
 - `server.js` — Express server: `express.static` (with `index:false`) serves
   `public/`, plus explicit `GET /`, `/details`, `/contact` routes that render
@@ -213,40 +213,33 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
 ## Build log
 
 - `GET /build-log` (`public/build-log.html` + `buildlog.js`) shows recent
-  merged pull requests across this project's GitHub repos, so visitors can
-  see the actual development activity behind the "built via AI
-  collaboration" narrative on the Details page.
+  merged pull requests for this repo, so visitors can see the actual
+  development activity behind the "built via AI collaboration" narrative on
+  the Details page.
 - **Deliberately secretless, same as everything else in this project**:
   `buildlog.js` calls the GitHub REST API (`GET
   /repos/{owner}/{repo}/pulls?state=closed...`) fully unauthenticated — no
   PAT, no GitHub App, no stored credential of any kind — just a required
   `User-Agent` header (GitHub rejects unauthenticated requests without one).
-- **In-memory cache, `CACHE_TTL_MS` = 15 minutes.** Results across all
-  configured repos are combined, sorted by `merged_at` descending, and
-  cached; a request only re-hits the GitHub API once the cache has expired,
-  keeping total API usage to roughly 1 request per repo per 15 minutes
-  (~12/hour combined) regardless of site traffic — comfortably under
-  GitHub's 60 req/hour unauthenticated-per-IP limit.
-- **Graceful degradation, per repo.** Each repo is fetched independently
-  (`Promise.allSettled`, not `Promise.all`) so one repo failing/rate-limited
-  doesn't blank out the others' data. If a refresh fails entirely and no
-  prior cache exists, the page shows a friendly "Build history is
-  temporarily unavailable" message — never a raw error or crash. If a
-  refresh fails but a previous cache exists, the last known-good data is
-  served instead (marked stale in a log line, not shown to the visitor).
-- **Important known limitation: only public repos will ever show data.**
-  `buildlog.REPOS` currently lists `glued2/nr-vse-webdev`,
-  `glued2/nr-vse-azure-lab`, and `glued2/nr-azure-lab-workflows`, but the
-  latter two are **private** repositories — unauthenticated GitHub API
-  requests against a private repo return `404` (GitHub intentionally hides
-  private repos from anonymous callers rather than returning `403`, to
-  avoid leaking their existence). This isn't a bug or a rate-limit issue; it
-  will never resolve itself without either making those repos public or
-  switching to an authenticated request (which would reintroduce a stored
-  credential, contradicting the "completely secretless" requirement this
-  feature was explicitly built around). Until/unless that changes, the Build
-  Log will only ever display merged PRs from `nr-vse-webdev`. See the
-  "Cross-repo relationship" section below.
+- **In-memory cache, `CACHE_TTL_MS` = 15 minutes.** Results are sorted by
+  `merged_at` descending and cached; a request only re-hits the GitHub API
+  once the cache has expired, keeping total API usage to about 1 request per
+  15 minutes regardless of site traffic — comfortably under GitHub's 60
+  req/hour unauthenticated-per-IP limit.
+- **Graceful degradation, per repo.** `buildlog.REPOS` is fetched via
+  `Promise.allSettled` (not `Promise.all`), so if more repos are ever added,
+  one failing/rate-limited repo wouldn't blank out the others' data. If a
+  refresh fails entirely and no prior cache exists, the page shows a friendly
+  "Build history is temporarily unavailable" message — never a raw error or
+  crash. If a refresh fails but a previous cache exists, the last known-good
+  data is served instead (marked stale in a log line, not shown to the
+  visitor).
+- **`buildlog.REPOS` currently lists only `glued2/nr-vse-webdev`.** The
+  companion infra repos (`nr-vse-azure-lab`, `nr-azure-lab-workflows`, see
+  "Cross-repo relationship" below) are **private**, and unauthenticated
+  GitHub API requests against a private repo return `404` — this is a
+  deliberate, informed choice to stay fully secretless rather than a bug.
+  They could be added back to `REPOS` if/when those repos are made public.
 
 ## Conventions
 
@@ -324,7 +317,7 @@ Required repo config:
   (**private**).
 - This repo only contains site content and its own simple deploy workflow —
   it does **not** consume those reusable workflows.
-- Both of those repos being private is why the `/build-log` page (see
-  "Build log" above) can currently only ever show pull requests from this
-  repo (`nr-vse-webdev`, the only public one) — its unauthenticated GitHub
-  API calls get a `404` for the other two.
+- Both of those repos being private is why `buildlog.REPOS` (see "Build log"
+  above) only lists `nr-vse-webdev` — unauthenticated GitHub API calls
+  against a private repo return `404`, so there'd be no benefit to listing
+  the other two while they stay private.

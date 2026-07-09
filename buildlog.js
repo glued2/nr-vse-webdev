@@ -1,21 +1,22 @@
-// buildlog.js — fetches recently merged pull requests across this site's
-// public GitHub repos, for the "Build Log" page. Deliberately secretless:
-// unauthenticated GitHub REST API requests only (no PAT, no GitHub App, no
-// stored credential of any kind), same "no secrets" philosophy as
-// db.js/auth.js/analytics.js — just backed by a public, unauthenticated API
-// instead of a managed-identity-gated Azure resource.
+// buildlog.js — fetches recently merged pull requests for this site's GitHub
+// repo, for the "Build Log" page. Deliberately secretless: unauthenticated
+// GitHub REST API requests only (no PAT, no GitHub App, no stored credential
+// of any kind), same "no secrets" philosophy as db.js/auth.js/analytics.js —
+// just backed by a public, unauthenticated API instead of a
+// managed-identity-gated Azure resource.
 //
 // GitHub allows 60 unauthenticated requests/hour per source IP. To stay
 // comfortably under that regardless of site traffic, results are cached in
 // memory for CACHE_TTL_MS and only refreshed on expiry — worst case this is
-// 3 requests (one per repo) every 15 minutes, ~12/hour total, no matter how
-// many visitors hit the page in between.
-
-const REPOS = [
-  { owner: "glued2", repo: "nr-vse-webdev" },
-  { owner: "glued2", repo: "nr-vse-azure-lab" },
-  { owner: "glued2", repo: "nr-azure-lab-workflows" },
-];
+// 1 request every 15 minutes, ~4/hour, no matter how many visitors hit the
+// page in between.
+//
+// REPOS only lists this repo (nr-vse-webdev) — the companion infra repos
+// (nr-vse-azure-lab, nr-azure-lab-workflows) are private, and unauthenticated
+// GitHub API requests against a private repo return 404. They could be added
+// back here if/when those repos are made public; until then, adding them
+// would only produce logged fetch failures with no benefit.
+const REPOS = [{ owner: "glued2", repo: "nr-vse-webdev" }];
 
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const PER_REPO_FETCH_COUNT = 20;
@@ -53,9 +54,11 @@ async function fetchMergedPRs(owner, repo) {
     }));
 }
 
-// Fetches all 3 repos independently (Promise.allSettled, not Promise.all) so
-// one repo being unreachable/rate-limited doesn't discard the other two's
-// results — partial data is strictly better than none for a "build log".
+// Fetches every configured repo independently (Promise.allSettled, not
+// Promise.all) so one repo being unreachable/rate-limited doesn't discard
+// any others' results — partial data is strictly better than none for a
+// "build log". (Currently REPOS has just one entry, but this keeps the
+// degrade-gracefully behavior ready if more repos are added later.)
 async function refreshCache() {
   const results = await Promise.allSettled(REPOS.map((r) => fetchMergedPRs(r.owner, r.repo)));
   const combined = [];
