@@ -51,32 +51,6 @@
     wallSet.add(key(col, row));
   }
 
-  // Border.
-  for (let c = 0; c < COLS; c++) {
-    addWall(c, 0);
-    addWall(c, ROWS - 1);
-  }
-  for (let r = 0; r < ROWS; r++) {
-    addWall(0, r);
-    addWall(COLS - 1, r);
-  }
-
-  // Interior pillars — isolated single-cell obstacles (never adjacent to
-  // each other or the border), placed with 4-fold symmetry for a tidy
-  // look. Because each pillar is a lone cell surrounded by open floor,
-  // removing it can never disconnect the maze, so every dot always stays
-  // reachable — a deliberately simple, safe layout for a small lab demo
-  // rather than a hand-authored corridor labyrinth.
-  const PILLAR_BASE = [
-    [3, 3], [3, 6], [6, 3], [6, 6],
-  ];
-  for (const [x, y] of PILLAR_BASE) {
-    addWall(x, y);
-    addWall(COLS - 1 - x, y);
-    addWall(x, ROWS - 1 - y);
-    addWall(COLS - 1 - x, ROWS - 1 - y);
-  }
-
   function isWall(col, row) {
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
     return wallSet.has(key(col, row));
@@ -85,13 +59,6 @@
   function canMove(col, row, dir) {
     return !isWall(col + dir.dx, row + dir.dy);
   }
-
-  const POWER_CELLS = [
-    [1, 1],
-    [COLS - 2, 1],
-    [1, ROWS - 2],
-    [COLS - 2, ROWS - 2],
-  ];
 
   const PLAYER_START = { col: Math.floor(COLS / 2), row: ROWS - 2 };
 
@@ -102,7 +69,202 @@
     { color: "#ff9c33", eyeGlow: "#ffe9d2", start: { col: COLS - 3, row: ROWS - 3 } },
   ];
 
-  let dotSet, powerSet, player, ghosts, score, level, elapsed, running, gameOver, lastTime, rafId, vulnerableUntil;
+  // Cells that must always stay open floor: every entity's spawn point
+  // plus its immediate neighbors. Obstacles and power pellets never
+  // generate here, so nobody ever starts boxed in and no pellet ever
+  // lands on top of (or right next to) a spawn point.
+  const PROTECTED_CELLS = (() => {
+    const set = new Set();
+    const protect = (col, row) => {
+      set.add(key(col, row));
+      for (const d of ALL_DIRS) set.add(key(col + d.dx, row + d.dy));
+    };
+    protect(PLAYER_START.col, PLAYER_START.row);
+    for (const def of GHOST_DEFS) protect(def.start.col, def.start.row);
+    return set;
+  })();
+
+  // --- Procedural maze generation --------------------------------------
+  //
+  // Each new game (and each level-up) gets a freshly randomized layout of
+  // isolated single-cell obstacles, placed with 4-fold symmetry for a tidy
+  // look (same visual spirit as the original hand-authored layout). Unlike
+  // a "perfect maze" algorithm (recursive backtracker, Prim's, etc.) —
+  // which by construction produces a spanning tree with exactly one path
+  // between any two cells and zero loops, letting ghosts trivially corner
+  // the player — this generator explicitly verifies after the fact that
+  // the result (a) keeps every open floor cell reachable from the player's
+  // start via a flood fill, and (b) has at least one loop (open-cell edge
+  // count >= open-cell count, i.e. it's not a spanning tree), retrying
+  // with fresh random obstacle placement if either check fails.
+  const MAZE_GEN_MAX_ATTEMPTS = 30;
+  const MIN_PILLAR_SEEDS = 4;
+  const MAX_PILLAR_SEEDS = 7;
+
+  function buildBorder() {
+    wallSet.clear();
+    for (let c = 0; c < COLS; c++) {
+      addWall(c, 0);
+      addWall(c, ROWS - 1);
+    }
+    for (let r = 0; r < ROWS; r++) {
+      addWall(0, r);
+      addWall(COLS - 1, r);
+    }
+  }
+
+  function mirrorPositions(col, row) {
+    return [
+      [col, row],
+      [COLS - 1 - col, row],
+      [col, ROWS - 1 - row],
+      [COLS - 1 - col, ROWS - 1 - row],
+    ];
+  }
+
+  // True only if (col,row) and its full 3x3 neighborhood are free of walls
+  // and protected cells — i.e. placing a pillar here keeps it an isolated
+  // single cell surrounded entirely by open floor.
+  function isIsolatedSpot(col, row) {
+    if (col <= 1 || col >= COLS - 2 || row <= 1 || row >= ROWS - 2) return false;
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        const k = key(col + dc, row + dr);
+        if (wallSet.has(k) || PROTECTED_CELLS.has(k)) return false;
+      }
+    }
+    return true;
+  }
+
+  function scatterPillars() {
+    const seedCount =
+      MIN_PILLAR_SEEDS + Math.floor(Math.random() * (MAX_PILLAR_SEEDS - MIN_PILLAR_SEEDS + 1));
+    const halfCol = Math.floor(COLS / 2);
+    const halfRow = Math.floor(ROWS / 2);
+    let placed = 0;
+    let tries = 0;
+    while (placed < seedCount && tries < seedCount * 25) {
+      tries++;
+      const col = 2 + Math.floor(Math.random() * Math.max(1, halfCol - 4));
+      const row = 2 + Math.floor(Math.random() * Math.max(1, halfRow - 4));
+      const mirrored = mirrorPositions(col, row);
+      if (!mirrored.every(([c, r]) => isIsolatedSpot(c, r))) continue;
+      for (const [c, r] of mirrored) addWall(c, r);
+      placed++;
+    }
+  }
+
+  function floodFillOpenCells(startCol, startRow) {
+    const visited = new Set([key(startCol, startRow)]);
+    const stack = [[startCol, startRow]];
+    let edgeCount = 0;
+    while (stack.length) {
+      const [c, r] = stack.pop();
+      for (const d of ALL_DIRS) {
+        const nc = c + d.dx;
+        const nr = r + d.dy;
+        if (isWall(nc, nr)) continue;
+        edgeCount++; // each undirected edge counted once per endpoint visited
+        const nk = key(nc, nr);
+        if (!visited.has(nk)) {
+          visited.add(nk);
+          stack.push([nc, nr]);
+        }
+      }
+    }
+    return { visited, edges: edgeCount / 2 };
+  }
+
+  function countOpenInteriorCells() {
+    let count = 0;
+    for (let r = 1; r < ROWS - 1; r++) {
+      for (let c = 1; c < COLS - 1; c++) {
+        if (!isWall(c, r)) count++;
+      }
+    }
+    return count;
+  }
+
+  // Connected (every open cell reachable from the player's start) AND has
+  // at least one loop: a connected graph that's a tree has exactly
+  // (nodeCount - 1) edges, so edges >= nodeCount proves a cycle exists —
+  // i.e. more than one route between at least some pair of cells.
+  function mazeIsConnectedWithLoops() {
+    const totalOpen = countOpenInteriorCells();
+    const { visited, edges } = floodFillOpenCells(PLAYER_START.col, PLAYER_START.row);
+    if (visited.size !== totalOpen) return false;
+    return edges >= visited.size;
+  }
+
+  function generateMaze() {
+    for (let attempt = 0; attempt < MAZE_GEN_MAX_ATTEMPTS; attempt++) {
+      buildBorder();
+      scatterPillars();
+      if (mazeIsConnectedWithLoops()) return;
+    }
+    // Extremely unlikely fallback: a border-only interior is trivially
+    // fully connected and full of loops (a plain open grid).
+    buildBorder();
+  }
+
+  // --- Power pellet placement ------------------------------------------
+  //
+  // Randomized each game/level, but kept spread out: one pellet per
+  // quadrant (mirroring the original 4-corner layout's spirit) so they
+  // stay a meaningful strategic resource instead of clustering together.
+  // Always placed after the maze layout is finalized, on open floor only.
+  const POWER_MIN_DIST = 4;
+
+  function quadrantsForPowerCells() {
+    const midCol = Math.floor(COLS / 2);
+    const midRow = Math.floor(ROWS / 2);
+    return [
+      { c0: 1, c1: midCol, r0: 1, r1: midRow },
+      { c0: midCol, c1: COLS - 2, r0: 1, r1: midRow },
+      { c0: 1, c1: midCol, r0: midRow, r1: ROWS - 2 },
+      { c0: midCol, c1: COLS - 2, r0: midRow, r1: ROWS - 2 },
+    ];
+  }
+
+  function manhattan(a, b) {
+    return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+  }
+
+  function pickPowerCells() {
+    const chosen = [];
+    for (const q of quadrantsForPowerCells()) {
+      const candidates = [];
+      for (let r = q.r0; r <= q.r1; r++) {
+        for (let c = q.c0; c <= q.c1; c++) {
+          if (isWall(c, r)) continue;
+          if (PROTECTED_CELLS.has(key(c, r))) continue;
+          candidates.push([c, r]);
+        }
+      }
+      if (!candidates.length) continue;
+      // Prefer a spot far enough from pellets already chosen in earlier
+      // quadrants; fall back to any open cell in this quadrant if none
+      // qualify (only possible in a very cramped quadrant).
+      const spaced = candidates.filter((cand) => chosen.every((ch) => manhattan(cand, ch) >= POWER_MIN_DIST));
+      const pool = spaced.length ? spaced : candidates;
+      chosen.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return chosen;
+  }
+
+  let dotSet,
+    powerSet,
+    player,
+    ghosts,
+    score,
+    level,
+    elapsed,
+    running,
+    gameOver,
+    started,
+    lastTime,
+    rafId,
+    vulnerableUntil;
 
   function loadHighScore() {
     const raw = localStorage.getItem(HIGH_SCORE_KEY);
@@ -118,7 +280,7 @@
 
   function populateDots() {
     dotSet = new Set();
-    powerSet = new Set(POWER_CELLS.map(([c, r]) => key(c, r)));
+    powerSet = new Set(pickPowerCells().map(([c, r]) => key(c, r)));
     for (let r = 1; r < ROWS - 1; r++) {
       for (let c = 1; c < COLS - 1; c++) {
         const k = key(c, r);
@@ -165,6 +327,7 @@
   }
 
   function reset() {
+    generateMaze();
     populateDots();
     resetPositions();
     score = 0;
@@ -173,13 +336,15 @@
     vulnerableUntil = -1;
     running = true;
     gameOver = false;
+    started = false;
     lastTime = null;
-    messageEl.textContent = "";
+    messageEl.textContent = "Press an arrow key or WASD to start!";
     updateHud();
   }
 
   function levelUp() {
     level += 1;
+    generateMaze();
     populateDots();
     resetPositions();
     messageEl.textContent = `Level ${level}! Ghosts are getting faster…`;
@@ -259,6 +424,15 @@
         entity.dir = newDir;
         entity.colF = col;
         entity.rowF = row;
+        // The game stays idle (ghosts static, elapsed frozen, no "start"
+        // analytics event) until the player's direction actually resolves
+        // away from NONE for the first time — i.e. the muncher truly
+        // begins moving, not merely a keypress being registered.
+        if (isPlayer && newDir !== NONE && !started) {
+          started = true;
+          messageEl.textContent = "";
+          reportGameEvent("start");
+        }
       }
       if (entity.dir !== NONE) entity.facing = Math.atan2(entity.dir.dy, entity.dir.dx);
     }
@@ -268,9 +442,11 @@
 
   function update(dt) {
     if (!running) return;
-    elapsed += dt;
 
+    // stepEntity() may flip `started` to true this very frame (the moment
+    // the player's direction resolves away from NONE for the first time).
     stepEntity(player, PLAYER_SPEED, dt, true);
+    if (started) elapsed += dt;
     if (player.dir !== NONE) player.chompPhase += dt * 9;
 
     const playerCol = Math.round(player.colF);
@@ -286,6 +462,14 @@
       powerSet.delete(pk);
       score += 50;
       vulnerableUntil = elapsed + VULNERABLE_DURATION;
+    }
+
+    if (!started) {
+      // Idle: maze/dots/pellets are visible and the player can eat under
+      // themselves if standing on one, but ghosts stay put and the clock
+      // doesn't run until the player actually starts moving.
+      updateHud();
+      return;
     }
 
     const vulnerable = isVulnerable();
@@ -511,7 +695,9 @@
     draw();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(loop);
-    reportGameEvent("start");
+    // reportGameEvent("start") now fires lazily, the moment the player's
+    // first direction keypress actually resolves into movement — see the
+    // `started` handling in stepEntity()/update() above.
   }
 
   // --- Input handling ---
