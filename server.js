@@ -218,6 +218,11 @@ app.get("/jump", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "jump.html"));
 });
 
+app.get("/eat", (req, res) => {
+  recordPageHit(req);
+  res.sendFile(path.join(PUBLIC_DIR, "eat.html"));
+});
+
 // --- Game analytics: fire-and-forget events from play.html/jump.html -----
 // Not gated by requireAdmin (any visitor playing a game can post here) and
 // not counted as a page hit itself — this is purely game telemetry (start/
@@ -226,7 +231,7 @@ app.get("/jump", (req, res) => {
 // just means analytics.logGameEvent() throws so we can respond 503 — the
 // game clients themselves treat this endpoint as fire-and-forget and ignore
 // the response either way.
-const GAME_EVENT_GAMES = ["blocks", "jump"];
+const GAME_EVENT_GAMES = ["blocks", "jump", "eat"];
 const GAME_EVENT_TYPES = ["start", "end"];
 
 app.post("/api/game-event", async (req, res) => {

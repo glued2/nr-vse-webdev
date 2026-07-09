@@ -1,0 +1,109 @@
+/* ================================
+   eat.css — styles for the Play Eat page
+   ================================ */
+
+.eat-card {
+  max-width: 1040px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.eat-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.eat-board-wrap {
+  flex: 1 1 320px;
+  display: flex;
+  justify-content: center;
+}
+
+#eat-canvas {
+  display: block;
+  width: 100%;
+  max-width: 408px;
+  height: auto;
+  aspect-ratio: 408 / 456;
+  background: var(--bg-1);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.eat-side {
+  flex: 1 1 200px;
+  min-width: 180px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.eat-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 0.4rem;
+}
+
+.eat-stat-label {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.eat-stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.eat-btn {
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.6rem 1.4rem;
+}
+
+.eat-message {
+  min-height: 1.4em;
+  color: var(--accent-2);
+  font-weight: 600;
+  margin: 0;
+}
+
+.eat-controls h2 {
+  font-size: 1rem;
+  margin: 0.5rem 0 0.4rem;
+  color: var(--accent);
+}
+
+.eat-controls ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .eat-layout {
+    flex-direction: column;
+    align-items: center;
+  }
+  .eat-side {
+    max-width: 240px;
+    width: 100%;
+  }
+}

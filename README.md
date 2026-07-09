@@ -14,13 +14,15 @@ Entra ID-gated `/admin` page.
   how the Azure infrastructure and pipeline fit together.
 - **`public/contact.html`** — Contact page. Links back to the repo owner,
   [github.com/glued2](https://github.com/glued2).
-- **`public/play.html`** / **`public/jump.html`** — Two small standalone
-  browser games ("Play: Blocks" and "Play: Jump" in the nav), served via the
-  `/play` and `/jump` routes in `server.js`. Static, not DB-backed.
+- **`public/play.html`** / **`public/jump.html`** / **`public/eat.html`** —
+  Three small standalone browser games ("Play: Blocks", "Play: Jump", and
+  "Play: Eat" in the nav), served via the `/play`, `/jump`, and `/eat` routes
+  in `server.js`. Static, not DB-backed.
 - **`public/styles.css`** / **`public/app.js`** — Shared styling (animated
   gradient background, glassy cards, gradient nav bar) and a small script for
   active-link highlighting, fade-in on load, and the mobile nav toggle. The
-  nav bar (Intro / Details / Contact / Play: Blocks / Play: Jump / Admin) is
+  nav bar (Intro / Details / Contact / Play: Blocks / Play: Jump / Play: Eat /
+  Admin) is
   identical across every page, including `/admin`, so `app.js`'s active-link
   highlighting and mobile toggle work everywhere without extra code.
 - **`public/admin.html`** / **`public/admin.css`** / **`public/admin.js`** —
@@ -133,7 +135,8 @@ sections (six in total: two on Intro, three on Details, one on Contact).
   otherwise) and return a graceful error (503) if Azure SQL can't be reached
   rather than crashing.
 - `/admin` renders the exact same nav bar as every other page (Intro /
-  Details / Contact / Play: Blocks / Play: Jump / Admin). Its own "Admin" nav
+  Details / Contact / Play: Blocks / Play: Jump / Play: Eat / Admin). Its own
+  "Admin" nav
   item is dynamic: signed out (or Entra not configured), it's a plain link to
   `/admin`; signed in, `admin.js` swaps it for "Signed in as **{name}** · Sign
   out" (linking to `/auth/logout`), driven by the same `/admin/status` check
@@ -142,7 +145,8 @@ sections (six in total: two on Intro, three on Details, one on Contact).
 ## Usage analytics
 
 `/admin`'s "Stats" tab shows a small Webalizer-style usage dashboard covering
-both page hits (Intro/Details/Contact/Play: Blocks/Play: Jump) and game plays,
+both page hits (Intro/Details/Contact/Play: Blocks/Play: Jump/Play: Eat) and
+game plays,
 backed by an Azure Storage Account (Table Storage) provisioned by the
 companion `nr-vse-azure-lab` infra repo — **not** the Azure SQL content
 database.
@@ -164,13 +168,14 @@ database.
 - **Two tables**, both partitioned by UTC date (`yyyy-MM-dd`) for simple
   "last N days" range queries:
   - `PageHits` — one row per page view of `/`, `/details`, `/contact`,
-    `/play`, `/jump` (only; static assets, `/admin/*`, `/auth/*`, and
+    `/play`, `/jump`, `/eat` (only; static assets, `/admin/*`, `/auth/*`, and
     `/api/game-event` itself are not logged, to keep the data meaningful).
     Columns: `Path`, `Referrer`, `BrowserFamily`.
   - `GameEvents` — one row per game start/end, written by the new
     `POST /api/game-event` route, called from `public/tetris.js` (Play:
-    Blocks) and `public/jump.js` (Play: Jump) on game start and game-over
-    (with the final score). Columns: `Game` (`blocks`/`jump`), `Event`
+    Blocks), `public/jump.js` (Play: Jump), and `public/eat.js` (Play: Eat) on
+    game start and game-over
+    (with the final score). Columns: `Game` (`blocks`/`jump`/`eat`), `Event`
     (`start`/`end`), `Score` (present only on `end`).
 - **Graceful fallback everywhere** — exactly like `db.js`/`auth.js`: if
   `AZURE_STORAGE_ACCOUNT_NAME` isn't set or Table Storage isn't reachable,

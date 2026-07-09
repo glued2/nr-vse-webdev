@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nr-vse-webdev — Play Eat</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/eat.css" />
+</head>
+<body class="fade-init">
+  <nav class="navbar">
+    <a class="brand" href="/">nr-vse-webdev</a>
+    <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+    <ul class="nav-links">
+      <li><a href="/">Intro</a></li>
+      <li><a href="/details">Details</a></li>
+      <li><a href="/contact">Contact</a></li>
+      <li><a href="/play.html">Play: Blocks</a></li>
+      <li><a href="/jump.html">Play: Jump</a></li>
+      <li><a href="/eat.html">Play: Eat</a></li>
+      <li><a href="/admin">Admin</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <h1>Maze muncher 🟡</h1>
+      <p class="subtitle">
+        A tiny maze-chomp game, built in vanilla JS on an HTML5 canvas. Eat every dot, dodge the ghosts, and grab a power pellet to turn the tables.
+      </p>
+    </section>
+
+    <div class="card eat-card">
+      <div class="eat-layout">
+        <div class="eat-board-wrap">
+          <canvas id="eat-canvas" width="408" height="456"></canvas>
+        </div>
+        <div class="eat-side">
+          <div class="eat-stat">
+            <span class="eat-stat-label">Score</span>
+            <span id="eat-score" class="eat-stat-value">0</span>
+          </div>
+          <div class="eat-stat">
+            <span class="eat-stat-label">Best</span>
+            <span id="eat-best" class="eat-stat-value">0</span>
+          </div>
+          <div class="eat-stat">
+            <span class="eat-stat-label">Level</span>
+            <span id="eat-level" class="eat-stat-value">1</span>
+          </div>
+
+          <button id="eat-restart" class="btn eat-btn">Restart</button>
+
+          <p id="eat-message" class="eat-message"></p>
+
+          <div class="eat-controls">
+            <h2>Controls</h2>
+            <ul>
+              <li>Arrow keys / WASD — move</li>
+              <li>Eat a pulsing power pellet to turn ghosts blue and vulnerable for a few seconds</li>
+              <li>Clear every dot to advance a level — ghosts get a little faster each time</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>Built with 🎶 and a little help from GitHub Copilot.</footer>
+
+  <script src="/app.js"></script>
+  <script src="/eat.js"></script>
+</body>
+</html>

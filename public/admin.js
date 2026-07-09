@@ -220,7 +220,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     statsGamesBody.innerHTML = "";
     const games = summary.games || {};
-    const gameLabels = { blocks: "Play: Blocks", jump: "Play: Jump" };
+    const gameLabels = { blocks: "Play: Blocks", jump: "Play: Jump", eat: "Play: Eat" };
     Object.entries(games).forEach(([gameKey, g]) => {
       const tr = document.createElement("tr");
       tr.innerHTML =

@@ -26,14 +26,23 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   `public/styles.css` and `public/app.js` provide shared nav/styling
   (gradient background, glassy cards, nav bar, active-link highlighting,
   mobile nav toggle) across all pages. The nav is identical everywhere —
-  Intro / Details / Contact / Play: Blocks / Play: Jump / Admin, in that
+  Intro / Details / Contact / Play: Blocks / Play: Jump / Play: Eat / Admin,
+  in that
   order, "Admin" always last — including on `/admin` itself.
-- `public/play.html`, `public/jump.html` — two small standalone browser
-  games ("Play: Blocks" / "Play: Jump" in the nav), served via the `/play`
-  and `/jump` routes in `server.js`. Static, not DB-backed. Their game
-  scripts (`public/tetris.js`, `public/jump.js`) fire-and-forget `POST
+- `public/play.html`, `public/jump.html`, `public/eat.html` — three small
+  standalone browser
+  games ("Play: Blocks" / "Play: Jump" / "Play: Eat" in the nav), served via
+  the `/play`,
+  `/jump`, and `/eat` routes in `server.js`. Static, not DB-backed. Their game
+  scripts (`public/tetris.js`, `public/jump.js`, `public/eat.js`)
+  fire-and-forget `POST
   /api/game-event` on game start and game-over (with score) for the usage
-  analytics dashboard — see "Usage analytics" below.
+  analytics dashboard — see "Usage analytics" below. `eat.js` is an original
+  maze-chomp game (grid movement, dot/power-pellet eating, chase-AI ghosts) —
+  deliberately built with wholly original geometric art (hand-drawn
+  circles/arcs on canvas) rather than any copyrighted character/sprite
+  designs, in the same "inspired by, not copied from" spirit as
+  Blocks (Tetris-like) and Jump (Chrome-dino-like).
 - `public/admin.html` / `public/admin.css` / `public/admin.js` — Microsoft
   Entra ID-gated content editor, one Quill editor card per editable section,
   plus a "Stats" tab showing the usage analytics dashboard (hits-by-page
@@ -165,12 +174,14 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   `PartitionKey`) so "last N days" queries are simple OData range filters:
   - `PageHits` — `Path`, `Referrer`, `BrowserFamily`. Written by
     `analytics.logPageHit()`, called fire-and-forget from the `/`,
-    `/details`, `/contact`, `/play`, `/jump` route handlers only (not static
+    `/details`, `/contact`, `/play`, `/jump`, `/eat` route handlers only (not
+    static
     assets, not `/admin/*`, not `/auth/*`, not `/api/game-event` itself).
-  - `GameEvents` — `Game` (`blocks`/`jump`), `Event` (`start`/`end`), `Score`
+  - `GameEvents` — `Game` (`blocks`/`jump`/`eat`), `Event` (`start`/`end`), `Score`
     (present only on `end`). Written by `analytics.logGameEvent()` via
     `POST /api/game-event`, called from `public/tetris.js`'s `restart()`/
-    `spawnNext()` and `public/jump.js`'s `start()`/`endGame()`.
+    `spawnNext()`, `public/jump.js`'s `start()`/`endGame()`, and
+    `public/eat.js`'s `start()`/`endGame()`.
   - `createTable()` throws 409 if a table already exists — `ensureTables()`
     catches and ignores that specific error (Table Storage has no native
     "create if not exists"), rethrowing anything else. This is the Table
@@ -183,7 +194,7 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
 - `GET /admin/stats` is gated by the same `requireAdmin` middleware as the
   content editor; it returns `{configured: false}` if analytics isn't set up,
   or aggregates the last 30 days into `{ totalHits, hitsByPage, hitsByDay
-  (14-day array), games: { blocks, jump } }`.
+  (14-day array), games: { blocks, jump, eat } }`.
 - **Local dev has no real Table Storage access.** When
   `AZURE_STORAGE_ACCOUNT_NAME` is unset, or any call fails: page-hit logging
   silently no-ops, `POST /api/game-event` responds `503` (the game JS ignores
