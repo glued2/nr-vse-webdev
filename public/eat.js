@@ -236,19 +236,31 @@
   }
 
   function stepEntity(entity, speed, dt, isPlayer) {
-    const atCol = Math.abs(entity.colF - Math.round(entity.colF)) < TURN_EPSILON;
-    const atRow = Math.abs(entity.rowF - Math.round(entity.rowF)) < TURN_EPSILON;
-    if (atCol && atRow) {
-      entity.colF = Math.round(entity.colF);
-      entity.rowF = Math.round(entity.rowF);
-      if (isPlayer) {
-        if (entity.nextDir !== NONE && canMove(entity.colF, entity.rowF, entity.nextDir)) {
-          entity.dir = entity.nextDir;
-        } else if (!canMove(entity.colF, entity.rowF, entity.dir)) {
-          entity.dir = NONE;
-        }
-        if (entity.dir !== NONE) entity.facing = Math.atan2(entity.dir.dy, entity.dir.dx);
+    const col = Math.round(entity.colF);
+    const row = Math.round(entity.rowF);
+    const atCol = Math.abs(entity.colF - col) < TURN_EPSILON;
+    const atRow = Math.abs(entity.rowF - row) < TURN_EPSILON;
+    if (atCol && atRow && isPlayer) {
+      // Only decide a *new* direction (and snap exactly to the cell) when
+      // it actually changes — turning or coming to a stop. Re-snapping to
+      // the same integer on every frame that merely passes near an
+      // intersection (which spans several frames, since one frame's worth
+      // of movement is smaller than TURN_EPSILON) would discard that
+      // frame's forward progress every time and permanently trap the
+      // entity oscillating around the intersection, which is exactly the
+      // "animates in place but never moves" bug this fixes.
+      let newDir = entity.dir;
+      if (entity.nextDir !== NONE && canMove(col, row, entity.nextDir)) {
+        newDir = entity.nextDir;
+      } else if (!canMove(col, row, entity.dir)) {
+        newDir = NONE;
       }
+      if (newDir !== entity.dir) {
+        entity.dir = newDir;
+        entity.colF = col;
+        entity.rowF = row;
+      }
+      if (entity.dir !== NONE) entity.facing = Math.atan2(entity.dir.dy, entity.dir.dx);
     }
     entity.colF += entity.dir.dx * speed * dt;
     entity.rowF += entity.dir.dy * speed * dt;
@@ -289,12 +301,21 @@
         continue;
       }
 
-      const atCol = Math.abs(ghost.colF - Math.round(ghost.colF)) < TURN_EPSILON;
-      const atRow = Math.abs(ghost.rowF - Math.round(ghost.rowF)) < TURN_EPSILON;
+      const col = Math.round(ghost.colF);
+      const row = Math.round(ghost.rowF);
+      const atCol = Math.abs(ghost.colF - col) < TURN_EPSILON;
+      const atRow = Math.abs(ghost.rowF - row) < TURN_EPSILON;
       if (atCol && atRow) {
-        ghost.colF = Math.round(ghost.colF);
-        ghost.rowF = Math.round(ghost.rowF);
-        ghost.dir = chooseGhostDirection(ghost, playerCol, playerRow, vulnerable);
+        // Same fix as stepEntity(): only snap position + adopt a new
+        // direction when the chosen direction actually differs from the
+        // current one, so continuing straight through an intersection
+        // never gets its forward progress reset frame after frame.
+        const newDir = chooseGhostDirection(ghost, playerCol, playerRow, vulnerable);
+        if (newDir !== ghost.dir) {
+          ghost.dir = newDir;
+          ghost.colF = col;
+          ghost.rowF = row;
+        }
       }
       const speed = vulnerable ? GHOST_VULNERABLE_SPEED : ghostSpeed();
       ghost.colF += ghost.dir.dx * speed * dt;
