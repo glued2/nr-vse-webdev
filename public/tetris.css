@@ -19,7 +19,9 @@
 .tetris-board-wrap {
   flex: 0 0 auto;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
 }
 
 #tetris-canvas {
@@ -32,6 +34,57 @@
   border: 1px solid var(--card-border);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  touch-action: manipulation;
+}
+
+/* Touch controls: hidden on mouse/desktop by default, shown on touch
+   devices or narrow viewports (Playwright's mobile emulation and real
+   phones both match `pointer: coarse`; the width query also covers a
+   resized desktop window for manual testing). */
+.tetris-touch-controls {
+  display: none;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 240px;
+}
+
+.tetris-touch-row {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+.tetris-touch-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.6rem 0.5rem;
+  border-radius: 10px;
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.tetris-touch-btn:active {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #0f0c29;
+  border-color: transparent;
+}
+
+.tetris-touch-btn-wide {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .tetris-touch-controls {
+    display: flex;
+  }
 }
 
 .tetris-side {

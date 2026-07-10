@@ -25,7 +25,12 @@ Entra ID-gated `/admin` page.
   even wall density (no empty center plaza), then verified via flood fill to
   be fully connected with at least one loop — and tops up power pellets
   mid-level (converting a regular dot back into one) once more than half of
-  the current supply has been eaten.
+  the current supply has been eaten. All three games are playable on mobile:
+  Jump's existing canvas `pointerdown` handler already covers tap-to-jump on
+  touch devices, while Blocks and Eat have on-screen touch controls (move/
+  rotate/drop buttons, and a 4-way D-pad) that call the same functions as
+  the desktop keydown handlers; all three canvases scale responsively and
+  the touch controls only show on touch/narrow viewports.
 - **`public/build-log.html`** — Build Log page. Shows recent merged pull
   requests for this repo, server-rendered via
   `GET /build-log` in `server.js` from `buildlog.js`'s cached GitHub API

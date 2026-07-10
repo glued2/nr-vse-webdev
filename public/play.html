@@ -36,6 +36,17 @@
       <div class="tetris-layout">
         <div class="tetris-board-wrap">
           <canvas id="tetris-canvas" width="240" height="480"></canvas>
+          <div class="tetris-touch-controls" aria-label="Touch controls">
+            <div class="tetris-touch-row">
+              <button type="button" class="tetris-touch-btn" data-action="left" aria-label="Move left">&#8592;</button>
+              <button type="button" class="tetris-touch-btn" data-action="rotate" aria-label="Rotate">&#8635;</button>
+              <button type="button" class="tetris-touch-btn" data-action="right" aria-label="Move right">&#8594;</button>
+            </div>
+            <div class="tetris-touch-row">
+              <button type="button" class="tetris-touch-btn tetris-touch-btn-wide" data-action="soft-drop" aria-label="Soft drop">&#8595; Soft</button>
+              <button type="button" class="tetris-touch-btn tetris-touch-btn-wide" data-action="hard-drop" aria-label="Hard drop">&#10515; Hard</button>
+            </div>
+          </div>
         </div>
         <div class="tetris-side">
           <div class="tetris-stat">

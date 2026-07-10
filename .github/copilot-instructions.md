@@ -62,7 +62,19 @@ privacy-preserving usage analytics dashboard backed by Azure Table Storage.
   `maybeRegeneratePowerPellet()` converts a regular dot back into a power
   pellet (via `pickRegenPowerCell()`, reusing the same spacing/exclusion
   rules) once more than half of the current game/level's power pellets have
-  been eaten, so the supply never fully runs dry mid-level.
+  been eaten, so the supply never fully runs dry mid-level. All three games
+  are mobile/touch-playable: `jump.js`'s existing canvas `pointerdown`
+  handler already doubles as tap-to-jump on touch devices (Pointer Events
+  unify mouse/touch), and its canvas was already responsive
+  (`width:100%`/`aspect-ratio` in `jump.css`); `tetris.js`/`play.html` and
+  `eat.js`/`eat.html` gained on-screen touch controls — a left/rotate/right +
+  soft-drop/hard-drop button row for Blocks, a 4-button D-pad for Eat — that
+  call the exact same functions (`move()`/`rotate()`/`softDrop()`/
+  `hardDrop()`, and a shared `handleDirectionInput()` in `eat.js`) as the
+  existing keydown handlers, so there's a single source of truth for game
+  logic regardless of input method. The touch controls are shown via a
+  `@media (max-width: 640px), (pointer: coarse)` query (matching real phones
+  and Playwright's mobile emulation) and hidden by default on desktop/mouse.
 - `public/admin.html` / `public/admin.css` / `public/admin.js` — Microsoft
   Entra ID-gated content editor, one Quill editor card per editable section,
   plus a "Stats" tab showing the usage analytics dashboard (hits-by-page

@@ -385,6 +385,24 @@
     pauseBtn.addEventListener("click", togglePause);
   }
 
+  // On-screen touch controls (mobile) — dispatch to the exact same
+  // functions the keydown handler above calls, so there's no duplicated
+  // game logic between keyboard and touch input paths.
+  const TOUCH_ACTIONS = {
+    left: () => move(-1),
+    right: () => move(1),
+    rotate,
+    "soft-drop": softDrop,
+    "hard-drop": hardDrop,
+  };
+  document.querySelectorAll(".tetris-touch-btn[data-action]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const action = TOUCH_ACTIONS[btn.dataset.action];
+      if (action) action();
+    });
+  });
+
   restart();
   rafId = requestAnimationFrame(tick);
 
