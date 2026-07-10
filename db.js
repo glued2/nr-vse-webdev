@@ -13,6 +13,20 @@ const TABLE_NAME = "PageContent";
 
 const isConfigured = Boolean(SQL_SERVER && SQL_DATABASE);
 
+// In-memory TTL cache for getAllPageContent(), so a page request doesn't hit
+// the DB every single time. This matters because Azure SQL serverless
+// auto-pauses after a period of no activity — without this cache, every
+// pageview (including bots/uptime checks) would query the DB directly and
+// the database would rarely, if ever, get the chance to actually pause.
+// setPageContent() invalidates/refreshes this cache immediately after a
+// successful save so admin edits are reflected on the very next page load
+// rather than waiting out the TTL.
+const CONTENT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let contentCache = {
+  data: null, // null until the first successful fetch
+  fetchedAt: 0,
+};
+
 let credential;
 function getCredential() {
   if (!credential) {
@@ -102,7 +116,9 @@ async function getPageContent(pageKey) {
 }
 
 // Returns a map of pageKey -> { title, bodyHtml, updatedAt } for all rows.
-async function getAllPageContent() {
+// This always hits the database directly — see getAllPageContent() below for
+// the cached, request-facing version.
+async function fetchAllPageContentFromDb() {
   return withConnection(async (pool) => {
     const result = await pool
       .request()
@@ -119,9 +135,28 @@ async function getAllPageContent() {
   });
 }
 
-// Upserts a page's content.
+// Cached wrapper around fetchAllPageContentFromDb(): serves from the
+// in-memory cache while it's within CONTENT_CACHE_TTL_MS, otherwise does a
+// real DB query and repopulates the cache. A failed fetch is never cached —
+// it just propagates so callers keep their existing fallback-to-static
+// behavior and will retry against the DB on the very next request.
+async function getAllPageContent() {
+  const now = Date.now();
+  if (contentCache.data && now - contentCache.fetchedAt < CONTENT_CACHE_TTL_MS) {
+    return contentCache.data;
+  }
+  const data = await fetchAllPageContentFromDb();
+  contentCache = { data, fetchedAt: now };
+  return data;
+}
+
+// Upserts a page's content, then immediately refreshes the in-memory
+// getAllPageContent() cache so this edit shows up on the very next page
+// load instead of waiting out CONTENT_CACHE_TTL_MS. If the post-save refresh
+// itself fails for some reason, the cache is simply invalidated (rather than
+// left stale) so the next read is forced to retry against the DB.
 async function setPageContent(pageKey, title, bodyHtml) {
-  return withConnection(async (pool) => {
+  await withConnection(async (pool) => {
     const result = await pool
       .request()
       .input("pageKey", sql.NVarChar(50), pageKey)
@@ -143,6 +178,12 @@ async function setPageContent(pageKey, title, bodyHtml) {
         `);
     }
   });
+
+  try {
+    contentCache = { data: await fetchAllPageContentFromDb(), fetchedAt: Date.now() };
+  } catch (err) {
+    contentCache = { data: null, fetchedAt: 0 };
+  }
 }
 
 // Deletes any rows whose PageKey is in `keys` — used to prune legacy
@@ -161,11 +202,21 @@ async function pruneLegacyKeys(keys) {
   });
 }
 
+// Clears the getAllPageContent() cache outright (rather than repopulating
+// it). Used after startup schema/seed/prune runs, since those happen
+// fire-and-forget concurrently with the server already accepting requests —
+// without this, a request landing in that narrow startup window could cache
+// pre-seed (e.g. empty-table) data for the full TTL.
+function invalidateContentCache() {
+  contentCache = { data: null, fetchedAt: 0 };
+}
+
 module.exports = {
   isConfigured,
   ensureSchemaAndSeed,
   getPageContent,
   getAllPageContent,
+  invalidateContentCache,
   setPageContent,
   pruneLegacyKeys,
 };

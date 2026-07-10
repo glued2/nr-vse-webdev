@@ -158,6 +158,10 @@ async function seedDatabase() {
     });
     await db.ensureSchemaAndSeed(seedRows);
     await db.pruneLegacyKeys(LEGACY_KEYS);
+    // Startup seeding runs fire-and-forget while the server is already
+    // accepting requests, so invalidate the content cache afterward in case
+    // a request landed during that window and cached pre-seed data.
+    db.invalidateContentCache();
     console.log("[db] Schema ensured and seed content applied (idempotent).");
   } catch (err) {
     console.warn(`[db] Failed to ensure schema/seed: ${err.message}`);
