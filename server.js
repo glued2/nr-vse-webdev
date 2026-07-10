@@ -16,6 +16,7 @@ const db = require("./db");
 const auth = require("./auth");
 const analytics = require("./analytics");
 const buildLog = require("./buildlog");
+const { runMigration } = require("./scripts/migrate-old-content");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -513,6 +514,52 @@ app.use(
   "/vendor/quill",
   express.static(path.join(__dirname, "node_modules", "quill", "dist"))
 );
+
+// --- TEMPORARY: one-off old→new SQL content migration trigger ------------
+// This route (and MIGRATE_CONTENT_SECRET, and scripts/migrate-old-content.js
+// itself) exist solely to run the PageContent migration from the old
+// sqldb-website-content database to the new free-tier database, for cases
+// where only HTTP access to the deployed site is available (no Azure
+// CLI/SSH access to run the script directly). It's not linked from any
+// nav/UI and not documented anywhere public. PLANNED REMOVAL: once the
+// migration has been confirmed successful, a follow-up PR should delete
+// this route, the MIGRATE_CONTENT_SECRET app setting/secret and its wiring
+// in deploy.yml, and scripts/migrate-old-content.js — none of that is
+// meant to stay in the codebase long-term.
+//
+// The secret check happens FIRST, before any DB connection attempt, and
+// uses a plain env var comparison (not a session/cookie) since this is
+// meant to be triggered by a single curl request, not a browser session.
+app.post("/internal/migrate-content", async (req, res) => {
+  const expectedSecret = process.env.MIGRATE_CONTENT_SECRET;
+  const providedSecret = req.get("X-Migrate-Secret");
+
+  if (!expectedSecret || !providedSecret || providedSecret !== expectedSecret) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+
+  try {
+    const result = await runMigration({
+      log: (line) => console.log(`[migrate-content route] ${line}`),
+    });
+    // Invalidate the content cache so the migrated rows show up on the very
+    // next page load rather than waiting out the TTL.
+    db.invalidateContentCache();
+    res.json({
+      ok: true,
+      server: result.server,
+      oldDatabase: result.oldDatabase,
+      newDatabase: result.newDatabase,
+      readCount: result.readRows.length,
+      writtenCount: result.writtenRows.length,
+      readRows: result.readRows,
+      writtenRows: result.writtenRows,
+    });
+  } catch (err) {
+    console.error(`[migrate-content route] Migration failed: ${err.message}`);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // Registered last (and with index:false) so it never shadows the dynamic
 // "/" route or the .html redirects above — it only serves concrete static

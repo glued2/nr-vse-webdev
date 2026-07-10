@@ -8,14 +8,20 @@
 // server. Both databases are AAD-only auth; there is no SQL login here, same
 // as db.js.
 //
-// This script is NOT required/imported by server.js and is NOT run by any
-// deploy pipeline or GitHub Actions workflow — it must be run manually,
-// exactly once, from a context that holds the Web App's system-assigned
-// managed identity (which is the SQL Server's AAD Administrator, so it has
-// full rights over every database on the server, including the old one).
-// The GitHub Actions OIDC service principal has no SQL data-plane rights
-// and deliberately isn't being granted any just for this — see the PR
-// description for the `az webapp ssh` / Kudu SSH console run instructions.
+// This module exports `runMigration()` so the same logic can be invoked two
+// ways:
+//   1. As a CLI script (`node scripts/migrate-old-content.js`), run manually
+//      from a context that holds the Web App's managed identity (e.g.
+//      `az webapp ssh` / the Kudu SSH console).
+//   2. From the temporary `POST /internal/migrate-content` route in
+//      server.js, for cases where only HTTP access to the deployed site is
+//      available (no Azure CLI/SSH access) — see that route for the
+//      secret-header gate. That route is itself temporary, one-off tooling;
+//      see its comment in server.js for the planned removal.
+//
+// Neither entry point is required/imported by the app's normal startup path
+// beyond the temporary route above, and this script is not run by any
+// deploy pipeline or GitHub Actions workflow.
 //
 // Safe to re-run: upserts by PageKey (UPDATE, falling back to INSERT if no
 // row exists yet) into the target database, exactly like db.js's
@@ -24,20 +30,12 @@
 const sql = require("mssql");
 const { DefaultAzureCredential } = require("@azure/identity");
 
-const SQL_SERVER = process.env.AZURE_SQL_SERVER_FQDN;
-// The old database's name isn't (and shouldn't be) a permanent app setting
-// once it's gone, so it defaults to the known value but can be overridden.
-const OLD_DATABASE = process.env.OLD_SQL_DATABASE_NAME || "sqldb-website-content";
-// The new/target database: reuse whatever AZURE_SQL_DATABASE_NAME already
-// resolves to in this environment (the Web App is already configured to
-// point at the new DB), or allow an explicit override.
-const NEW_DATABASE = process.env.NEW_SQL_DATABASE_NAME || process.env.AZURE_SQL_DATABASE_NAME;
 const TOKEN_SCOPE = "https://database.windows.net/.default";
 const TABLE_NAME = "PageContent";
 
-async function connect(databaseName, token) {
+async function connect(server, databaseName, token) {
   const pool = new sql.ConnectionPool({
-    server: SQL_SERVER,
+    server,
     database: databaseName,
     options: { encrypt: true },
     authentication: {
@@ -97,41 +95,56 @@ async function upsertRow(pool, row) {
   }
 }
 
-async function main() {
-  if (!SQL_SERVER) {
+// Runs the full old-DB-to-new-DB migration and returns a summary object:
+// { server, oldDatabase, newDatabase, readRows, writtenRows } where
+// readRows/writtenRows are arrays of { pageKey, title, bodyHtmlLength,
+// updatedAt }. Accepts an optional `log` function (defaults to
+// console.log) so callers (CLI vs. HTTP route) can control where the
+// verbose per-row logging goes; errors always throw rather than being
+// swallowed, so callers can decide how to report failure.
+async function runMigration({ log = console.log } = {}) {
+  const server = process.env.AZURE_SQL_SERVER_FQDN;
+  // The old database's name isn't (and shouldn't be) a permanent app
+  // setting once it's gone, so it defaults to the known value but can be
+  // overridden.
+  const oldDatabase = process.env.OLD_SQL_DATABASE_NAME || "sqldb-website-content";
+  // The new/target database: reuse whatever AZURE_SQL_DATABASE_NAME already
+  // resolves to in this environment (the Web App is already configured to
+  // point at the new DB), or allow an explicit override.
+  const newDatabase = process.env.NEW_SQL_DATABASE_NAME || process.env.AZURE_SQL_DATABASE_NAME;
+
+  if (!server) {
     throw new Error(
-      "AZURE_SQL_SERVER_FQDN is not set. Run this from a context that has the " +
-        "Web App's app settings available (e.g. `az webapp ssh` into the " +
-        "deployed Web App) — see the PR description for exact steps."
+      "AZURE_SQL_SERVER_FQDN is not set. This must run in a context that has " +
+        "the Web App's app settings and managed identity available."
     );
   }
-  if (!NEW_DATABASE) {
+  if (!newDatabase) {
     throw new Error("AZURE_SQL_DATABASE_NAME (or NEW_SQL_DATABASE_NAME) is not set.");
   }
-  if (OLD_DATABASE === NEW_DATABASE) {
+  if (oldDatabase === newDatabase) {
     throw new Error(
-      `OLD_SQL_DATABASE_NAME and the target database both resolve to "${NEW_DATABASE}" ` +
+      `OLD_SQL_DATABASE_NAME and the target database both resolve to "${newDatabase}" ` +
         "— refusing to run, this would copy a database onto itself."
     );
   }
 
-  console.log(`[migrate] server:       ${SQL_SERVER}`);
-  console.log(`[migrate] source (old): ${OLD_DATABASE}`);
-  console.log(`[migrate] target (new): ${NEW_DATABASE}`);
+  log(`[migrate] server:       ${server}`);
+  log(`[migrate] source (old): ${oldDatabase}`);
+  log(`[migrate] target (new): ${newDatabase}`);
 
   const credential = new DefaultAzureCredential();
   const tokenResponse = await credential.getToken(TOKEN_SCOPE);
   if (!tokenResponse || !tokenResponse.token) {
     throw new Error(
-      "Failed to acquire an Azure AD access token for Azure SQL. This script " +
-        "must run as (or impersonating) the Web App's managed identity — e.g. " +
-        "via `az webapp ssh`, not from a plain local shell or GitHub Actions."
+      "Failed to acquire an Azure AD access token for Azure SQL. This must " +
+        "run as (or impersonating) the Web App's managed identity."
     );
   }
   const token = tokenResponse.token;
 
-  console.log(`[migrate] connecting to ${OLD_DATABASE}...`);
-  const oldPool = await connect(OLD_DATABASE, token);
+  log(`[migrate] connecting to ${oldDatabase}...`);
+  const oldPool = await connect(server, oldDatabase, token);
   let rows;
   try {
     rows = await readOldRows(oldPool);
@@ -139,40 +152,60 @@ async function main() {
     await oldPool.close();
   }
 
-  console.log(`[migrate] read ${rows.length} row(s) from ${OLD_DATABASE}:`);
-  for (const row of rows) {
-    console.log(
-      `[migrate]   PageKey=${row.PageKey} Title=${JSON.stringify(row.Title)} ` +
-        `BodyHtml.length=${row.BodyHtml ? row.BodyHtml.length : 0} UpdatedAt=${row.UpdatedAt}`
+  log(`[migrate] read ${rows.length} row(s) from ${oldDatabase}:`);
+  const readRows = rows.map((row) => ({
+    pageKey: row.PageKey,
+    title: row.Title,
+    bodyHtmlLength: row.BodyHtml ? row.BodyHtml.length : 0,
+    updatedAt: row.UpdatedAt,
+  }));
+  for (const row of readRows) {
+    log(
+      `[migrate]   PageKey=${row.pageKey} Title=${JSON.stringify(row.title)} ` +
+        `BodyHtml.length=${row.bodyHtmlLength} UpdatedAt=${row.updatedAt}`
     );
   }
 
   if (rows.length === 0) {
-    console.log("[migrate] no rows found in the old database — nothing to migrate.");
-    return;
+    log("[migrate] no rows found in the old database — nothing to migrate.");
+    return { server, oldDatabase, newDatabase, readRows, writtenRows: [] };
   }
 
-  console.log(`[migrate] connecting to ${NEW_DATABASE}...`);
-  const newPool = await connect(NEW_DATABASE, token);
+  log(`[migrate] connecting to ${newDatabase}...`);
+  const newPool = await connect(server, newDatabase, token);
+  const writtenRows = [];
   try {
     await ensureTable(newPool);
     for (const row of rows) {
       await upsertRow(newPool, row);
-      console.log(
-        `[migrate] wrote PageKey=${row.PageKey} Title=${JSON.stringify(row.Title)} ` +
-          `BodyHtml.length=${row.BodyHtml ? row.BodyHtml.length : 0} to ${NEW_DATABASE}`
+      const written = {
+        pageKey: row.PageKey,
+        title: row.Title,
+        bodyHtmlLength: row.BodyHtml ? row.BodyHtml.length : 0,
+      };
+      writtenRows.push(written);
+      log(
+        `[migrate] wrote PageKey=${written.pageKey} Title=${JSON.stringify(written.title)} ` +
+          `BodyHtml.length=${written.bodyHtmlLength} to ${newDatabase}`
       );
     }
   } finally {
     await newPool.close();
   }
 
-  console.log(
-    `[migrate] done — migrated ${rows.length} row(s) from ${OLD_DATABASE} to ${NEW_DATABASE}.`
-  );
+  log(`[migrate] done — migrated ${rows.length} row(s) from ${oldDatabase} to ${newDatabase}.`);
+
+  return { server, oldDatabase, newDatabase, readRows, writtenRows };
 }
 
-main().catch((err) => {
-  console.error("[migrate] FAILED:", err);
-  process.exitCode = 1;
-});
+// CLI entry point — only runs when this file is executed directly (`node
+// scripts/migrate-old-content.js`), not when required as a module (e.g. by
+// server.js's temporary migration route).
+if (require.main === module) {
+  runMigration().catch((err) => {
+    console.error("[migrate] FAILED:", err);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { runMigration };

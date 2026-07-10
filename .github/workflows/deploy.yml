@@ -54,7 +54,8 @@ jobs:
                 ENTRA_CLIENT_ID="${{ vars.ENTRA_CLIENT_ID }}" \
                 ENTRA_TENANT_ID="${{ vars.ENTRA_TENANT_ID }}" \
                 AZURE_ADMIN_UAMI_CLIENT_ID="${{ vars.AZURE_ADMIN_UAMI_CLIENT_ID }}" \
-                AZURE_STORAGE_ACCOUNT_NAME="${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}"
+                AZURE_STORAGE_ACCOUNT_NAME="${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                MIGRATE_CONTENT_SECRET="${{ secrets.MIGRATE_CONTENT_SECRET }}"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
