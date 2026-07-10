@@ -19,7 +19,9 @@
 .eat-board-wrap {
   flex: 1 1 320px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
 }
 
 #eat-canvas {
@@ -34,6 +36,54 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/* D-pad: hidden on mouse/desktop by default, shown on touch devices or
+   narrow viewports (see the equivalent note in tetris.css). */
+.eat-dpad {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.eat-dpad-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.eat-dpad-btn {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0.5rem;
+  border-radius: 10px;
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.eat-dpad-btn:active {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #0f0c29;
+  border-color: transparent;
+}
+
+.eat-dpad-spacer {
+  display: inline-block;
+  width: 48px;
+  height: 48px;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .eat-dpad {
+    display: flex;
+  }
 }
 
 .eat-side {

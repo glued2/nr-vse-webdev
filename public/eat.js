@@ -772,6 +772,16 @@
     // `started` handling in stepEntity()/update() above.
   }
 
+  // Shared by the keydown handler and the on-screen D-pad: restarts a
+  // finished game, or queues the requested direction for the player.
+  function handleDirectionInput(dir) {
+    if (gameOver) {
+      start();
+      return;
+    }
+    player.nextDir = dir;
+  }
+
   // --- Input handling ---
   const KEY_DIR_MAP = {
     ArrowUp: UP,
@@ -788,11 +798,7 @@
     const dir = KEY_DIR_MAP[e.code];
     if (dir) {
       e.preventDefault();
-      if (gameOver) {
-        start();
-        return;
-      }
-      player.nextDir = dir;
+      handleDirectionInput(dir);
     } else if (e.code === "Space" && gameOver) {
       e.preventDefault();
       start();
@@ -805,6 +811,18 @@
 
   restartBtn.addEventListener("click", () => {
     start();
+  });
+
+  // On-screen D-pad (mobile) — routes through the same direction-setting
+  // logic as the keydown handler above (including the gameOver → start()
+  // behavior), so touch and keyboard input can't drift apart.
+  const DPAD_DIR_MAP = { up: UP, down: DOWN, left: LEFT, right: RIGHT };
+  document.querySelectorAll(".eat-dpad-btn[data-dir]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const dir = DPAD_DIR_MAP[btn.dataset.dir];
+      if (dir) handleDirectionInput(dir);
+    });
   });
 
   start();
